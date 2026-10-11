@@ -141,7 +141,7 @@ function renderStageStrip() {
     btn.dataset.pos = String(pos);
     const d = s.delta ? s.delta.depth : 0;
     btn.innerHTML = `<span class="chip-name">${s.i === 0 ? 'Input' : s.pass}</span>${s.delta ? `<span class="chip-delta">${signed(d)}</span>` : ''}`;
-    btn.setAttribute('aria-label', `${s.i === 0 ? 'Input circuit' : s.pass}, ${STAGE_NAMES[stage] || stage} stage${s.delta ? `, depth ${signed(d)}` : ''}`);
+    btn.setAttribute('aria-label', `${s.i === 0 ? 'Input circuit' : s.pass}, ${STAGE_NAMES[stage] || stage} stage${s.i === 0 ? '' : `, ${CAUSE_NAMES[s.cause]} change`}${s.delta ? `, depth ${signed(d)}` : ''}`);
     btn.addEventListener('click', () => goTo(pos, { announce: true }));
     li.appendChild(btn);
     group.querySelector('.stage-passes').appendChild(li);

@@ -161,13 +161,27 @@ textarea { font-family: var(--mono); font-size: 13px; resize: vertical; }
 .pass-chip {
   font: inherit; font-size: 12.5px; display: inline-flex; gap: 6px; align-items: baseline;
   background: var(--panel-2); color: var(--ink); cursor: pointer;
-  border: 1px solid var(--line); border-left: 5px solid var(--layout); border-radius: 6px; padding: 4px 8px;
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
   white-space: nowrap;
 }
-.pass-chip.cause-translation { border-left-color: var(--translation); }
-.pass-chip.cause-routing { border-left-color: var(--routing); border-left-style: double; border-left-width: 6px; }
-.pass-chip.cause-optimization { border-left-color: var(--optimization); border-left-style: dotted; border-left-width: 6px; }
-.pass-chip.cause-input { border-left-color: var(--ink-2); }
+/* Kind of change: a coloured marker whose *shape* also differs, so it reads
+   without colour. Same shapes as the legend above the chips. */
+.cause-mark, .pass-chip::before {
+  --c: var(--layout);
+  content: ""; display: inline-block; width: 8px; height: 8px; flex: none;
+  align-self: center; background: var(--c);
+}
+.cause-translation { --c: var(--translation); }
+.cause-routing { --c: var(--routing); }
+.cause-optimization { --c: var(--optimization); }
+.cause-translation.cause-mark, .pass-chip.cause-translation::before { border-radius: 1px; }
+.cause-routing.cause-mark, .pass-chip.cause-routing::before { transform: rotate(45deg) scale(0.9); }
+.cause-optimization.cause-mark, .pass-chip.cause-optimization::before { border-radius: 50%; }
+.cause-layout.cause-mark, .pass-chip.cause-layout::before,
+.pass-chip.cause-input::before { background: transparent; border: 1.5px solid var(--c); border-radius: 50%; }
+.pass-chip.cause-input::before { --c: var(--ink-2); }
+.cause-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.cause-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .pass-chip.is-quiet { color: var(--ink-2); }
 .pass-chip.is-current { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .chip-delta { font-family: var(--mono); font-size: 11.5px; opacity: 0.85; }
