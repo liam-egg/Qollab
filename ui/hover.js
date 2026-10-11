@@ -3,14 +3,14 @@
 // 1. The stage card: resting the pointer on a gate lights it and its wires
 //    up, dims the rest, and shows a card saying what the gate is, what this
 //    pass did to it, and where to read more. A short delay keeps cards from
-//    flashing while the pointer just crosses the circuit. Clicking pins the
-//    card so its link can be followed; Escape closes it.
+//    flashing while the pointer just crosses the circuit, and the effect ends
+//    the moment the pointer leaves the gate. Clicking pins the card so its
+//    link can be followed; Escape or the close button unpins it.
 // 2. Tips: any element with data-tip shows a small tooltip on hover or focus.
 
 import { formatParams, gateLabel } from './format.js';
 import { gateInfo, wikiLink } from './wiki.js';
 
-const HIDE_DELAY = 220;
 const SHOW_DELAY = 140;
 
 function h(tag, cls, text) {
@@ -21,9 +21,9 @@ function h(tag, cls, text) {
 }
 
 export function createStageHover({ stage, player, card, getContext }) {
-  let hideTimer = null;
   let showTimer = null;
-  let pending = null;
+  let pending = null; // gate the pointer is resting on, not yet shown
+  let pendingAt = null; // latest pointer position over the pending gate
   let pinned = false;
   let suppressed = false;
   let current = null; // the gate entry being shown
@@ -61,11 +61,11 @@ export function createStageHover({ stage, player, card, getContext }) {
     const does = h('p', 'hc-does', info.does);
     const more = h('p', 'hc-more');
     more.append(wikiLink(info.wiki, `${info.full} on Wikipedia`));
-    return [head, verdict, does, more];
+    const hint = h('p', 'hc-hint', 'Click the gate to pin this card.');
+    return [head, verdict, does, more, hint];
   }
 
   function show(entry, clientX, clientY) {
-    window.clearTimeout(hideTimer);
     const ctx = getContext();
     if (!ctx) return;
     if (current !== entry) {
@@ -77,49 +77,54 @@ export function createStageHover({ stage, player, card, getContext }) {
     place(clientX, clientY);
   }
 
-  function hideNow() {
+  function cancelPending() {
     window.clearTimeout(showTimer);
     pending = null;
-    pinned = false;
+    pendingAt = null;
+  }
+
+  function clearShown() {
     current = null;
     card.hidden = true;
-    card.classList.remove('is-pinned');
     stage.highlight();
   }
 
-  function hideSoon() {
-    if (pinned) return;
-    window.clearTimeout(hideTimer);
-    hideTimer = window.setTimeout(hideNow, HIDE_DELAY);
+  function hideNow() {
+    cancelPending();
+    pinned = false;
+    card.classList.remove('is-pinned');
+    clearShown();
   }
 
   stage.svg.addEventListener('pointermove', (e) => {
     if (pinned || suppressed || e.pointerType === 'touch') return;
     const entry = stage.entryAt(e.target);
-    if (!entry) {
-      window.clearTimeout(showTimer);
-      pending = null;
-      hideSoon();
-      return;
-    }
-    if (entry === current) {
-      window.clearTimeout(hideTimer);
+    if (entry && entry === current) {
       place(e.clientX, e.clientY);
       return;
     }
-    // Wait for the pointer to rest on a gate before showing its card.
-    const { clientX, clientY } = e;
+    // Off the gate that was showing: its effect ends right away.
+    if (current) clearShown();
+    if (!entry) {
+      cancelPending();
+      return;
+    }
+    // Wait for the pointer to rest on a new gate before showing its card.
+    pendingAt = [e.clientX, e.clientY];
     if (entry !== pending) {
+      cancelPending();
       pending = entry;
-      window.clearTimeout(showTimer);
+      pendingAt = [e.clientX, e.clientY];
       showTimer = window.setTimeout(() => {
-        if (pending === entry) show(entry, clientX, clientY);
+        if (pending === entry && pendingAt) show(entry, ...pendingAt);
       }, SHOW_DELAY);
     }
   });
-  stage.svg.addEventListener('pointerleave', hideSoon);
-  card.addEventListener('pointerenter', () => window.clearTimeout(hideTimer));
-  card.addEventListener('pointerleave', hideSoon);
+  stage.svg.addEventListener('pointerleave', () => {
+    if (pinned) return;
+    cancelPending();
+    clearShown();
+  });
   card.querySelector('.hc-close').addEventListener('click', hideNow);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !card.hidden) hideNow();
@@ -133,7 +138,7 @@ export function createStageHover({ stage, player, card, getContext }) {
         hideNow();
         return;
       }
-      window.clearTimeout(showTimer);
+      cancelPending();
       current = null;
       show(entry, clientX, clientY);
       pinned = true;
@@ -141,7 +146,10 @@ export function createStageHover({ stage, player, card, getContext }) {
     },
     suppress(on) {
       suppressed = on;
-      if (on && !pinned) hideNow();
+      if (on && !pinned) {
+        cancelPending();
+        clearShown();
+      }
     },
     hide: hideNow,
   };

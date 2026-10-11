@@ -137,6 +137,7 @@ function drawGate(g, gate, cx, ys, yLo, yHi) {
     badgeY = drawBox(g, cx, yLo, yLo, gateLabel(name), params);
   } else if (name === 'swap') {
     el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
+    el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-hit' }, g);
     for (const y of ys) {
       el('path', { d: `M${cx - 7} ${y - 7}L${cx + 7} ${y + 7}M${cx - 7} ${y + 7}L${cx + 7} ${y - 7}`, class: 'gate-stroke' }, g);
     }
@@ -144,6 +145,7 @@ function drawGate(g, gate, cx, ys, yLo, yHi) {
   } else if (ctrl && ys.length === ctrl.controls + 1) {
     const targetY = ys[ys.length - 1];
     el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
+    el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-hit' }, g);
     for (const y of ys.slice(0, -1)) el('circle', { cx, cy: y, r: 5.5, class: 'gate-dot' }, g);
     if (ctrl.target === 'x') {
       el('circle', { cx, cy: targetY, r: 12, class: 'gate-target' }, g);

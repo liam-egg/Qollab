@@ -114,6 +114,10 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 
 .gate { color: var(--st-ink); transform-box: fill-box; transform-origin: center; cursor: pointer; transition: opacity 160ms; }
 .gate-line, .gate-param, .badge { pointer-events: none; }
+/* Connector lines are hoverable through a thin invisible strip: 5px either
+   side at any zoom (non-scaling), so CP and SWAP can be found along their
+   length without the whole column catching the pointer. */
+.gate-hit { stroke: transparent; stroke-width: 10px; vector-effect: non-scaling-stroke; pointer-events: stroke; }
 .gate.is-leaving { pointer-events: none; }
 .gate-box { fill: var(--st-gate); stroke: var(--st-gate-line); stroke-width: 1.4; transition: stroke-width 140ms; }
 .gate-label { fill: currentColor; font: 500 12.5px var(--mono); }
@@ -210,7 +214,10 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
   box-shadow: 0 14px 36px rgb(0 0 0 / 0.55);
   font-size: 13.5px; line-height: 1.45;
 }
+.hovercard:not(.is-pinned) { pointer-events: none; }
 .hovercard.is-pinned { border-color: var(--accent); }
+.hc-hint { margin: 6px 0 0; font-size: 12px; color: var(--st-ink-2); }
+.hovercard.is-pinned .hc-hint { display: none; }
 .hc-close {
   display: none; position: absolute; top: 6px; right: 6px; width: 28px; height: 28px;
   border: 0; border-radius: 6px; background: transparent; color: var(--st-ink-2); cursor: pointer; place-items: center;
@@ -295,7 +302,10 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 .ctl .i-pause, .player.is-playing .ctl .i-play { display: none; }
 .player.is-playing .ctl .i-pause { display: block; }
 #play:hover { color: var(--accent-ink); }
-#cc[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--accent); }
+#cc { position: relative; }
+#cc[aria-pressed="true"]::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: 5px; height: 2px; background: var(--accent);
+}
 .details-link svg { width: 18px; height: 18px; transition: transform 200ms var(--ease); }
 .details-link:hover svg { transform: translateY(3px); }
 .zoom-group { display: inline-flex; align-items: center; margin-right: 4px; }
