@@ -187,7 +187,9 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 }
 .key { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 6px; cursor: default; transition: background-color 160ms, color 160ms; }
 .key:hover, .key:focus-visible { background: rgb(255 255 255 / 0.07); color: var(--st-ink); }
-.key::before { content: ""; width: 16px; height: 14px; border-radius: 3px; border: 1.5px solid var(--st-gate-line); background: var(--st-gate); }
+/* Square swatches; border-box keeps all three the same size despite their
+   different border widths. */
+.key::before { content: ""; box-sizing: border-box; flex: none; width: 15px; height: 15px; border-radius: 3px; border: 1.5px solid var(--st-gate-line); background: var(--st-gate); }
 .key-add::before { border: 2.5px solid var(--add); background: var(--add-bg); }
 .key-move::before { border: 2px dashed var(--move); background: var(--move-bg); }
 
