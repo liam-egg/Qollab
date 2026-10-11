@@ -2,8 +2,10 @@
 // owns the UI. Only JSON strings cross the JS/Python boundary.
 import * as service from 'lens.service';
 import { gateListTable, Stage } from './ui/circuit.js';
-import { CAUSE_NAMES, noteFor, STAGE_NAMES, STAGE_NOTES } from './ui/explain.js';
+import { CAUSE_NAMES, noteFor, STAGE_NAMES, STAGE_NOTES, wikiForPass } from './ui/explain.js';
 import { formatParams, gateLabel, plural, signed } from './ui/format.js';
+import { createStageHover, initTips } from './ui/hover.js';
+import { CONCEPTS, PRESET_WIKI, TARGET_WIKI, wikiLink } from './ui/wiki.js';
 import {
   budgetSentence, compareSentence, METRICS, renderBudget, renderCompare,
 } from './ui/panels.js';
@@ -28,6 +30,16 @@ const state = {
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const stage = new Stage($('circuit'));
 const player = $('player');
+const hover = createStageHover({
+  stage,
+  player,
+  card: $('hovercard'),
+  getContext: () => {
+    const step = stage.step;
+    if (!step) return null;
+    return { step, isPhysical: step.physical, passName: step.i === 0 ? 'the input' : step.pass, isInput: step.i === 0 };
+  },
+});
 
 async function callPython(fn, ...args) {
   const result = await fn.callPromising(...args);
@@ -128,7 +140,13 @@ function renderCaption(step) {
   cap.innerHTML = `<span class="cap-head"><strong></strong><span class="cap-where"></span></span><span class="cap-text"></span>`;
   cap.querySelector('strong').textContent = label;
   cap.querySelector('.cap-where').textContent = where;
-  cap.querySelector('.cap-text').textContent = stepSummary(step) + tail;
+  cap.querySelector('.cap-text').textContent = `${stepSummary(step)}${tail} `;
+  const article = step.i === 0 ? PRESET_WIKI[state.bundle.circuit.id] : wikiForPass(step.pass, step.stage);
+  if (article) {
+    const link = wikiLink(article, 'Read more');
+    link.dataset.tip = 'Opens the related Wikipedia article in a new tab';
+    cap.querySelector('.cap-text').append(link);
+  }
   if (!reducedMotion.matches) cap.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
 }
 
@@ -150,6 +168,10 @@ function renderExplain(step) {
   }
   const why = [note.what, note.why].filter(Boolean).join(' ');
   $('explain-why').textContent = step.i === 0 ? note.what : why || STAGE_NOTES[step.stage] || '';
+  const further = $('explain-wiki');
+  const article = step.i === 0 ? PRESET_WIKI[state.bundle.circuit.id] : wikiForPass(step.pass, step.stage);
+  further.replaceChildren();
+  if (article) further.append('Further reading on Wikipedia: ', wikiLink(article), '.');
   const removed = step.removed || [];
   $('explain-removed').textContent = removed.length
     ? `Removed: ${removed.slice(0, 12).map(([n, q, p]) => `${gateLabel(n)}${p.length ? `(${formatParams(n, p)})` : ''} on ${q.map((x) => (step.physical ? `Q${x}` : `q${x}`)).join(', ')}`).join('; ')}${removed.length > 12 ? `; and ${removed.length - 12} more` : ''}.`
@@ -196,6 +218,15 @@ function renderChapters() {
     btn.innerHTML = `<span class="chip-name"></span>${s.delta ? `<span class="chip-delta">${signed(d)}</span>` : ''}`;
     btn.querySelector('.chip-name').textContent = s.i === 0 ? 'Input' : s.pass;
     btn.setAttribute('aria-label', `${s.i === 0 ? 'Input circuit' : s.pass}, ${stageName(s.stage)} stage${s.i === 0 ? '' : `, ${CAUSE_NAMES[s.cause]} change`}${s.delta ? `, depth ${signed(d)}` : ''}`);
+    btn.dataset.tip = stepSummary(snapshotAt(idx));
+    const preview = (on) => {
+      const slot = $('scrub-track').children[pos];
+      if (slot) slot.classList.toggle('is-preview', on);
+    };
+    btn.addEventListener('pointerenter', () => preview(true));
+    btn.addEventListener('pointerleave', () => preview(false));
+    btn.addEventListener('focus', () => preview(true));
+    btn.addEventListener('blur', () => preview(false));
     btn.addEventListener('click', () => {
       stopPlaying();
       goTo(pos, { announce: true });
@@ -216,6 +247,15 @@ function renderTable() {
   }).join('');
 }
 
+function wireTableJumps() {
+  $('metrics-table').querySelector('tbody').addEventListener('click', (e) => {
+    const row = e.target.closest('tr[data-pos]');
+    if (!row) return;
+    jump(Number(row.dataset.pos));
+    player.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+  });
+}
+
 function syncCurrent(container, selector) {
   for (const node of container.querySelectorAll(selector)) {
     const current = Number(node.dataset.pos) === state.pos;
@@ -232,6 +272,7 @@ function announce(text) {
 }
 
 function goTo(pos, { announce: say = false, animate = true } = {}) {
+  hover.hide();
   state.pos = Math.max(0, Math.min(pos, state.visible.length - 1));
   const idx = state.visible[state.pos];
   const step = snapshotAt(idx);
@@ -259,6 +300,14 @@ function goTo(pos, { announce: say = false, animate = true } = {}) {
   const moved = step.gates.filter((g) => g[3] === 'move').length;
   $('circuit-desc').textContent = `Circuit after ${name}: ${plural(step.gates.length, 'gate')} on ${plural(wires, 'wire')}, ${plural(columns, 'column')} wide${bands > 1 ? `, folded onto ${bands} rows` : ''}. ${added} added and ${moved} moved by this pass. The gate list under Details has the same information as text.`;
   $('gate-list').innerHTML = gateListTable(step, step.physical);
+  const counts = { keep: 0, add: 0, move: 0 };
+  for (const g of step.gates) counts[g[3]] += 1;
+  const by = step.i === 0 ? 'the input' : step.pass;
+  for (const key of document.querySelectorAll('.legend .key')) {
+    const n = counts[key.dataset.status];
+    key.dataset.tip = { keep: `${plural(n, 'gate')} unchanged by ${by}`, add: `${plural(n, 'gate')} added by ${by}`, move: `${plural(n, 'gate')} moved onto other qubits by ${by}` }[key.dataset.status];
+  }
+  updateZoomReadout();
   renderCaption(step);
   renderExplain(step);
   syncCurrent($('chapter-list'), '.pass-chip');
@@ -279,7 +328,7 @@ function leavePoster() {
 function setPlaying(on) {
   player.classList.toggle('is-playing', on);
   $('play').setAttribute('aria-label', on ? 'Pause' : 'Play');
-  $('play').title = on ? 'Pause (Space)' : 'Play (Space)';
+  $('play').dataset.tip = on ? 'Pause (Space)' : 'Play (Space)';
   if (!on) wake();
 }
 
@@ -331,6 +380,105 @@ function armIdle() {
   state.idleTimer = window.setTimeout(() => {
     if (state.timer && !player.querySelector('.controls:focus-within, .topbar:focus-within')) player.classList.add('is-idle');
   }, 2600);
+}
+
+// ---------- zoom and pan ----------
+
+function updateZoomReadout() {
+  if (!stage.fitView) return;
+  const v = stage.userView || stage.fitView;
+  const z = stage.fitView[2] / v[2];
+  $('zoom-fit').textContent = `${Math.round(z * 100)}%`;
+  player.classList.toggle('is-zoomed', Boolean(stage.userView));
+}
+
+let hintTimer = null;
+function showZoomHint() {
+  const hint = $('zoom-hint');
+  hint.hidden = false;
+  window.clearTimeout(hintTimer);
+  hintTimer = window.setTimeout(() => { hint.hidden = true; }, 1800);
+}
+
+function wireStageGestures() {
+  const svg = stage.svg;
+  const pointers = new Map();
+  let drag = null;
+  let pinch = null;
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    svg.setPointerCapture(e.pointerId);
+    if (pointers.size === 1) {
+      drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, target: e.target, moved: false };
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
+      drag = null;
+      hover.suppress(true);
+    }
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch.d > 0) stage.zoomAt(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch.d = d;
+      return;
+    }
+    if (!drag) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 5) {
+      drag.moved = true;
+      player.classList.add('is-panning');
+      hover.suppress(true);
+    }
+    if (drag.moved) {
+      stage.panBy(e.clientX - drag.x, e.clientY - drag.y);
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+    }
+  });
+  const end = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (drag && !drag.moved && e.type === 'pointerup') hover.click(drag.target, e.clientX, e.clientY);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) {
+      drag = null;
+      player.classList.remove('is-panning');
+      hover.suppress(false);
+    }
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+  // Plain scrolling keeps scrolling the page (to the details below);
+  // Ctrl/⌘ + scroll, or a trackpad pinch, zooms.
+  svg.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      stage.zoomAt(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0022)), e.clientX, e.clientY);
+    } else if (!stage.userView) {
+      showZoomHint();
+    }
+  }, { passive: false });
+  svg.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    stage.zoomAt(e.shiftKey ? 0.5 : 2, e.clientX, e.clientY, true);
+  });
+  stage.onViewChange = updateZoomReadout;
+  $('zoom-in').addEventListener('click', () => stage.zoomCenter(1.5));
+  $('zoom-out').addEventListener('click', () => stage.zoomCenter(1 / 1.5));
+  $('zoom-fit').addEventListener('click', () => stage.fit());
+  for (const key of document.querySelectorAll('.legend .key')) {
+    const on = () => stage.highlight({ gates: stage.entries.filter((en) => en.gate[3] === key.dataset.status) });
+    const off = () => stage.highlight();
+    key.addEventListener('pointerenter', on);
+    key.addEventListener('pointerleave', off);
+    key.addEventListener('focus', on);
+    key.addEventListener('blur', off);
+  }
 }
 
 function setCaptions(on) {
@@ -453,6 +601,11 @@ function selectTarget(tid) {
   state.shownIdx = null;
   goTo(keepPos ? state.visible.length - 1 : 0, { animate: keepPos });
   $('budget-sentence').textContent = budgetSentence(trace(), 'depth');
+  const links = [...new Set([PRESET_WIKI[state.bundle.circuit.id], TARGET_WIKI[tid], CONCEPTS.transpiler].filter(Boolean))];
+  const further = $('info-links');
+  further.replaceChildren('Further reading on Wikipedia: ');
+  links.forEach((a, i) => further.append(...(i ? [', ', wikiLink(a)] : [wikiLink(a)])));
+  further.append('.');
   $('info-title').textContent = `${state.bundle.circuit.title} · ${trace().target.label}`;
   announce(`${trace().target.label}. ${budgetSentence(trace(), 'depth')}`);
 }
@@ -560,7 +713,17 @@ function wireKeys() {
     const isSlider = t.id === 'step';
     if (t.matches('select, textarea') || (t.matches('input') && !isSlider)) return;
     const key = e.key.toLowerCase();
-    if ((key === ' ' || key === 'k') && !t.matches('button, a')) {
+    const pans = { arrowright: [-80, 0], arrowleft: [80, 0], arrowup: [0, 80], arrowdown: [0, -80] };
+    if (e.shiftKey && key in pans) {
+      e.preventDefault();
+      stage.panBy(...pans[key], true);
+    } else if (key === '+' || key === '=') {
+      stage.zoomCenter(1.5);
+    } else if (key === '-' || key === '_') {
+      stage.zoomCenter(1 / 1.5);
+    } else if (key === '0') {
+      stage.fit();
+    } else if ((key === ' ' || key === 'k') && !t.matches('button, a')) {
       e.preventDefault();
       togglePlay();
     } else if (key === 'c') {
@@ -606,6 +769,14 @@ function wire() {
   });
   wireScrubber();
   wireKeys();
+  wireStageGestures();
+  wireTableJumps();
+  initTips();
+  // Player buttons get styled tips instead of native titles.
+  for (const node of document.querySelectorAll('.player [title]')) {
+    node.dataset.tip = node.title;
+    node.removeAttribute('title');
+  }
   player.addEventListener('pointermove', wake);
   player.addEventListener('focusin', wake);
   let resizeTimer = null;

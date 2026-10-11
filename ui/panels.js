@@ -2,6 +2,7 @@
 
 import { CAUSE_NAMES } from './explain.js';
 import { percent, plural, signed } from './format.js';
+import { TARGET_WIKI, wikiLink } from './wiki.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -46,6 +47,9 @@ export function renderBudget(container, trace, metric) {
     running += d;
   }
   rows.push({ label: 'Final circuit', kind: 'total', from: 0, to: s.final[metric] });
+  const contributions = (cause) => trace.steps
+    .filter((st) => st.delta && st.cause === cause && st.delta[metric] !== 0)
+    .map((st) => `${st.pass} ${signed(st.delta[metric])}`);
   const max = Math.max(1, ...rows.map((r) => Math.max(r.from, r.to)));
   container.innerHTML = '';
   const list = document.createElement('ul');
@@ -53,6 +57,13 @@ export function renderBudget(container, trace, metric) {
   for (const r of rows) {
     const li = document.createElement('li');
     li.className = `wf-row wf-${r.kind}${r.cause ? ` cause-${r.cause}` : ''}`;
+    if (r.cause) {
+      const parts = contributions(r.cause);
+      li.dataset.tip = parts.length ? `From ${parts.join(', ')}` : 'No pass of this kind changed it';
+      li.tabIndex = 0;
+    } else {
+      li.dataset.tip = r.label === 'Input circuit' ? 'Before any pass ran' : 'After the last pass';
+    }
     const lo = Math.min(r.from, r.to);
     const hi = Math.max(r.from, r.to);
     const value = r.kind === 'total' ? String(r.to) : signed(r.delta);
@@ -131,11 +142,16 @@ export function renderTopology(trace, { compact = false } = {}) {
     if (swapEdges.has(key)) cls.push('edge-swap');
     const line = svgEl('line', { x1, y1, x2, y2, class: cls.join(' ') }, svg);
     if (usage.has(key)) line.setAttribute('stroke-width', String(Math.min(2 + usage.get(key) * 0.7, 7)));
+    const n = usage.get(key) || 0;
+    const hit = svgEl('line', { x1, y1, x2, y2, class: 'edge-hit' }, svg);
+    hit.dataset.tip = `Q${a}–Q${b}: ${n ? `${plural(n, 'two-qubit gate')} in the final circuit` : 'unused'}${swapEdges.has(key) ? '; routing put a SWAP here' : ''}`;
   }
   for (let q = 0; q < t.num_physical; q++) {
     const [x, y] = pos(q);
     const used = logicalAt.has(q);
-    svgEl('circle', { cx: x, cy: y, r: used ? 11 : 6, class: used ? 'node node-used' : 'node' }, svg);
+    const node = svgEl('circle', { cx: x, cy: y, r: used ? 11 : 6, class: used ? 'node node-used' : 'node' }, svg);
+    const degree = t.edges.filter((e) => e[0] === q || e[1] === q).length;
+    node.dataset.tip = `Q${q}: ${used ? `starts holding q${logicalAt.get(q)}` : 'spare'}; ${plural(degree, 'neighbour')}`;
     if (used) {
       const label = svgEl('text', { x, y: y + 4, 'text-anchor': 'middle', class: 'node-label' }, svg);
       label.textContent = `q${logicalAt.get(q)}`;
@@ -190,6 +206,12 @@ export function renderCompare(container, bundle, errors, { onInspect, activeId }
       <div class="meter" aria-hidden="true"><span style="width:${(p * 100).toFixed(1)}%"></span></div>
       <button type="button" class="btn" data-inspect="${tid}">${tid === activeId ? 'Showing in timeline' : 'Inspect in timeline'}</button>`;
     card.querySelector('.topo-wrap').appendChild(renderTopology(trace, { compact: true }));
+    if (TARGET_WIKI[tid]) {
+      const more = document.createElement('p');
+      more.className = 'further';
+      more.append(wikiLink(TARGET_WIKI[tid]));
+      card.querySelector('.hint').after(more);
+    }
     const btn = card.querySelector('button');
     if (tid === activeId) btn.setAttribute('aria-current', 'true');
     btn.addEventListener('click', () => onInspect(tid));

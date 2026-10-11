@@ -105,3 +105,52 @@ const NOTES = {
 export function noteFor(passName) {
   return NOTES[passName] || { what: 'A transpiler pass from Qiskit\'s preset pipeline.' };
 }
+
+// Further reading on Wikipedia for each pass (article paths; see wiki.js).
+const PASS_WIKI = {
+  HighLevelSynthesis: 'Logic_synthesis',
+  UnitarySynthesis: 'Cartan_decomposition',
+  BasisTranslator: 'Quantum_logic_gate#Universal_quantum_gates',
+  ElidePermutations: 'Permutation',
+  RemoveDiagonalGatesBeforeMeasure: 'Dead-code_elimination',
+  RemoveIdentityEquivalent: 'Dead-code_elimination',
+  InverseCancellation: 'Peephole_optimization',
+  CommutativeCancellation: 'Commutative_property',
+  ConsolidateBlocks: 'Unitary_matrix',
+  Split2QUnitaries: 'Quantum_entanglement',
+  SetLayout: 'Register_allocation',
+  TrivialLayout: 'Register_allocation',
+  VF2Layout: 'Subgraph_isomorphism_problem',
+  VF2PostLayout: 'Subgraph_isomorphism_problem',
+  SabreLayout: 'Bidirectional_search',
+  SabreSwap: 'Bidirectional_search',
+  FullAncillaAllocation: 'Ancilla_bit',
+  EnlargeWithAncilla: 'Ancilla_bit',
+  ApplyLayout: 'Register_allocation',
+  CheckMap: 'Graph_(discrete_mathematics)',
+  TwoQubitPeepholeOptimization: 'Peephole_optimization',
+  Optimize1qGatesDecomposition: 'Euler_angles',
+  Depth: 'Optimizing_compiler',
+  Size: 'Optimizing_compiler',
+  FixedPoint: 'Optimizing_compiler',
+  TimeUnitConversion: 'Instruction_scheduling',
+  CancelGPI2Adjoint: 'Peephole_optimization',
+  CancelGPIAdjoint: 'Peephole_optimization',
+  GPI2TwiceIsGPI: 'Trapped-ion_quantum_computer#Arbitrary_single_qubit_rotation',
+  CommuteGPIsThroughMS: 'M%C3%B8lmer%E2%80%93S%C3%B8rensen_gate',
+  CompactMoreThanThreeSingleQubitGates: 'Trapped-ion_quantum_computer#Arbitrary_single_qubit_rotation',
+  FuseConsecutiveMS: 'M%C3%B8lmer%E2%80%93S%C3%B8rensen_gate',
+};
+
+const STAGE_WIKI = {
+  init: 'Logic_synthesis',
+  layout: 'Register_allocation',
+  routing: 'Swap_(computer_programming)',
+  translation: 'Quantum_logic_gate#Universal_quantum_gates',
+  optimization: 'Optimizing_compiler',
+  scheduling: 'Instruction_scheduling',
+};
+
+export function wikiForPass(passName, stage) {
+  return PASS_WIKI[passName] || STAGE_WIKI[stage] || 'Source-to-source_compiler';
+}

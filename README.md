@@ -15,6 +15,8 @@ Transpile Lens replays the real Qiskit transpiler pass by pass. It shows each st
 ## What it does
 
 - **A full-screen player for the transpiler.** The circuit fills the screen like a video and plays pass by pass. Gates a pass kept slide to their new positions, gates it moved onto other qubits slide there (dashed outline, **↔** badge), added gates grow in (heavy outline, **+** badge), and removed gates fade out. The view zooms as the circuit grows, and long circuits fold onto extra rows so they stay readable on any screen. The scrubber is split into chapters by transpiler stage, and a subtitle-style caption says what each pass did. Scroll down for the details.
+- **Zoom and explore.** Ctrl/⌘ + scroll (or pinch) zooms where you point, drag pans, double-click zooms in, and the zoom buttons or 0 fit the whole circuit again. The view is clamped so part of the circuit always stays on screen. Hovering a gate lights it up with its wires, dims the rest, and shows what the gate is, what this pass did to it (including where a moved gate came from) and a Wikipedia link; click to pin the card. Hovering a wire shows which logical qubit it holds at the start and end. The legend, scrubber, pass list, cost bars, coupling maps and tables all respond to hover too.
+- **Further reading.** Every gate, pass, preset and chip links to the relevant Wikipedia article (for example SabreLayout → Bidirectional search, VF2Layout → Subgraph isomorphism problem), opening in a new tab so the player stays put.
 - **Plain-language explanations** for each pass: what it does in general, and what it did to *this* circuit ("SabreLayout added 4× SWAP; moved 10 gates onto different qubits. Depth 9 → 16.").
 - **Cost breakdown.** For the QFT on heavy-hex, for example: *depth 10 → 45: translation +41, routing +7, optimization −13. Routing inserted 4 SWAPs; translation then expanded each into three CNOTs.* Switch between depth, two-qubit gates, two-qubit depth and total gates.
 - **Same circuit, three chips.** Each comparison changes one thing at a time:
@@ -82,7 +84,7 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 
 ## Accessibility
 
-- Full keyboard control, with video-player shortcuts: Space or K plays and pauses, ←/→ step through passes, Home/End jump to the input or final circuit, C toggles captions, F goes full screen. Player controls fade while playing but come back on any key, pointer movement or focus. Radio groups follow the ARIA pattern, and focus states are visible.
+- Full keyboard control, with video-player shortcuts: Space or K plays and pauses, ←/→ step through passes, Home/End jump to the input or final circuit, C toggles captions, F goes full screen. + and − zoom, 0 fits, Shift + arrows pan. Every gate's Wikipedia link is also in the keyboard-reachable gate list. Player controls fade while playing but come back on any key, pointer movement or focus. Radio groups follow the ARIA pattern, and focus states are visible.
 - An `aria-live` region announces each step ("Step 3 of 7. SabreLayout, Layout stage. Added 4× SWAP…").
 - Text alternatives: a gate list for every circuit snapshot, a metrics table for every pass, a description of each SVG, and sentences summarising each chart.
 - Okabe-Ito colourblind-safe palette. Added, moved and removed are never shown by colour alone: they also differ by outline style and badge, and decreases are hatched with a ▼.
@@ -98,5 +100,6 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 | [Pyodide](https://pyodide.org) (provided by Qollab) | runs Python in the browser | MPL-2.0 |
 | [axe-core](https://github.com/dequelabs/axe-core) 4.10 | accessibility testing during development only; not shipped | MPL-2.0 |
 | pytest | tests only | MIT |
+| [Mona Sans](https://github.com/github/mona-sans) and [Fira Mono](https://github.com/mozilla/Fira) via Google Fonts | interface type | SIL Open Font License 1.1 |
 
 The frontend uses no third-party JavaScript or CSS. All code was written during the hackathon build window.

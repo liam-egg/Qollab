@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "mona sans",
+        "createdAt": "2026-10-11T02:44:06.957Z",
+        "reason": "user specified: asked in chat to change the fonts to Fira Sans Mono and Mona Sans"
+      }
+    ]
+  }
+}

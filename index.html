@@ -10,10 +10,10 @@
         <select id="preset"></select>
       </div>
       <div class="segmented" id="target-picker" role="radiogroup" aria-label="Hardware target"></div>
-      <ul class="legend" aria-label="How to read the diagram">
-        <li class="key key-keep">unchanged</li>
-        <li class="key key-add">added by this pass</li>
-        <li class="key key-move">moved to other qubits</li>
+      <ul class="legend" aria-label="How to read the diagram. Hover or focus a key to highlight those gates.">
+        <li class="key key-keep" tabindex="0" data-status="keep">unchanged</li>
+        <li class="key key-add" tabindex="0" data-status="add">added by this pass</li>
+        <li class="key key-move" tabindex="0" data-status="move">moved to other qubits</li>
       </ul>
     </div>
 
@@ -21,6 +21,15 @@
     <button type="button" class="big-play" id="big-play" aria-label="Play the transpiler, pass by pass">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
     </button>
+
+    <div class="hovercard" id="hovercard" hidden>
+      <button type="button" class="hc-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="hc-body"></div>
+    </div>
+
+    <p class="zoom-hint" id="zoom-hint" hidden>Hold Ctrl (⌘ on a Mac) and scroll to zoom · drag to pan</p>
 
     <p class="caption" id="caption"></p>
 
@@ -47,6 +56,15 @@
         <label class="ctl-toggle" title="Include analysis passes that changed nothing">
           <input type="checkbox" id="show-all"> All passes
         </label>
+        <div class="zoom-group" role="group" aria-label="Zoom">
+          <button type="button" class="ctl" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l4.5 4.5M7.8 10.5h5.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="ctl zoom-level" id="zoom-fit" aria-label="Fit the whole circuit" title="Fit the whole circuit (0)">100%</button>
+          <button type="button" class="ctl" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l4.5 4.5M7.8 10.5h5.4M10.5 7.8v5.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
         <button type="button" class="ctl" id="cc" aria-pressed="true" aria-label="Captions" title="Captions (C)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.5 10.2a2.3 2.3 0 1 0 0 3.6M16.5 10.2a2.3 2.3 0 1 0 0 3.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
@@ -58,7 +76,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
       </div>
-      <p class="sr-only" id="step-hint">Left and right arrows step through passes, Home and End jump to the input and the final circuit, Space plays and pauses.</p>
+      <p class="sr-only" id="step-hint">Left and right arrows step through passes, Home and End jump to the input and the final circuit, Space plays and pauses. Plus and minus zoom, zero fits the whole circuit, Shift with the arrow keys pans.</p>
     </div>
     <p class="status" id="load-status" role="status">Loading traces…</p>
   </section>
@@ -70,6 +88,7 @@
         <p class="lede" id="budget-sentence"></p>
         <p class="blurb" id="preset-blurb"></p>
         <p class="blurb" id="target-blurb"></p>
+        <p class="further" id="info-links"></p>
       </header>
 
       <section class="block now" aria-labelledby="explain-h">
@@ -79,6 +98,7 @@
         <dl class="delta-list" id="explain-delta"></dl>
         <p class="why" id="explain-why"></p>
         <p class="removed" id="explain-removed"></p>
+        <p class="further" id="explain-wiki"></p>
         <details class="text-alt">
           <summary>Gate list for this step (text version of the diagram)</summary>
           <div id="gate-list"></div>
@@ -102,7 +122,7 @@
         <p class="fineprint">Each map shows the chip's connections and where every logical qubit starts. Thicker lines carry more two-qubit gates in the final circuit; dashed lines are connections where routing put a SWAP.</p>
         <div class="error-model">
           <h4>Estimated success probability</h4>
-          <p class="fineprint">Product of (1 − error) over every gate, with the <strong>illustrative error rates below</strong>. These are assumptions for comparison, not device specifications, and they ignore idle errors, crosstalk and readout. Every target uses the same rates, so differences come from gate counts alone.</p>
+          <p class="fineprint">Product of (1 − error) over every gate, with the <strong>illustrative error rates below</strong>. These are assumptions for comparison, not device specifications, and they ignore idle errors, crosstalk and readout. Every target uses the same rates, so differences come from gate counts alone. Further reading on Wikipedia: <a class="wiki" href="https://en.wikipedia.org/wiki/Fidelity_of_quantum_states" target="_blank" rel="noopener">Fidelity of quantum states</a>, <a class="wiki" href="https://en.wikipedia.org/wiki/Quantum_noise" target="_blank" rel="noopener">Quantum noise</a>.</p>
           <div class="sliders">
             <label for="err1q">One-qubit gate error <output id="err1q-out" for="err1q"></output></label>
             <input type="range" id="err1q" min="0" max="0.01" step="0.0001" value="0.001">
@@ -140,6 +160,7 @@
 
       <footer class="footer">
         <p>Built with <a href="https://www.ibm.com/quantum/qiskit" target="_blank" rel="noopener">Qiskit</a> and <a href="https://github.com/qiskit-community/qiskit-ionq" target="_blank" rel="noopener">qiskit-ionq</a>. <span id="versions"></span>. MIT licensed.</p>
+        <p>Links marked ↗ go to Wikipedia and open in a new tab.</p>
         <p>This effort is supported by Qollab &amp; IonQ.</p>
       </footer>
     </div>

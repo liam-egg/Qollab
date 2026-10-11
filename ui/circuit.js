@@ -12,6 +12,7 @@
 // grow in, removed gates fade out, and the camera eases to the new extent.
 
 import { formatParams, gateLabel, STATUS_WORDS } from './format.js';
+import { gateInfo, wikiTitle, wikiUrl } from './wiki.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ROW_H = 46;
@@ -22,6 +23,11 @@ const TOP = 30;
 const BAND_GAP = 30;
 const BOX = 36;
 const MAX_SCALE = 2.4;
+// Zoom limits relative to the fitted view, and how much of the circuit must
+// stay on screen however far the viewer pans.
+const MAX_ZOOM = 8;
+const MIN_ZOOM = 0.6;
+const KEEP_VISIBLE = 0.3;
 
 const EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const MOVE_MS = 640;
@@ -78,13 +84,6 @@ function chooseFold(columns, rowCount, box) {
   return best;
 }
 
-function describeGate(gate, labelFor) {
-  const [name, qs, ps, status] = gate;
-  const params = formatParams(name, ps);
-  const on = qs.map(labelFor).join(name === 'cx' ? ' → ' : ', ');
-  return `${gateLabel(name)}${params ? `(${params})` : ''} on ${on}, ${STATUS_WORDS[status]}`;
-}
-
 const CONTROLLED = {
   cx: { controls: 1, target: 'x' },
   ccx: { controls: 2, target: 'x' },
@@ -128,10 +127,9 @@ function drawBadge(g, x, y, status) {
 }
 
 // Draws one gate into group g with its top-left anchor at (cx, yLo).
-function drawGate(g, gate, cx, ys, yLo, yHi, labelFor) {
+function drawGate(g, gate, cx, ys, yLo, yHi) {
   const [name, , ps, status] = gate;
   g.setAttribute('class', `gate s-${status}`);
-  el('title', {}, g).textContent = describeGate(gate, labelFor);
   const params = formatParams(name, ps);
   const ctrl = CONTROLLED[name];
   let badgeY = yLo - BOX / 2;
@@ -245,7 +243,11 @@ export class Stage {
     this.wires = new Map(); // key -> { node, y }
     this.step = null;
     this.nextId = 1;
-    this.view = null;
+    this.view = null; // current viewBox [x, y, w, h]
+    this.fitView = null; // the view that fits the whole circuit
+    this.userView = null; // set while the viewer has zoomed or panned
+    this.content = { w: 1, h: 1 };
+    this.onViewChange = null;
     this.cameraFrame = null;
     this.layoutInfo = null;
   }
@@ -308,6 +310,8 @@ export class Stage {
         const oldY = old ? old.y + currentOffset(node)[1] : null;
         node.getAnimations().forEach((a) => a.cancel());
         node.replaceChildren();
+        node.dataset.q = String(q);
+        el('rect', { x: 0, y: y - ROW_H / 2 + 4, width: fold.w, height: ROW_H - 8, class: 'wire-hit' }, node);
         el('line', { x1: LEFT - 10, x2: fold.w - RIGHT + 10, y1: y, y2: y, class: 'wire' }, node);
         el('text', { x: 6, y: y + 4, class: 'wire-name' }, node).textContent = labelFor(q);
         if (b === 0 && isPhysical && start.has(q)) {
@@ -356,7 +360,8 @@ export class Stage {
       }
       node.getAnimations().forEach((a) => a.cancel());
       node.replaceChildren();
-      drawGate(node, gate, anchor.x, ys, yLo, yHi, labelFor);
+      drawGate(node, gate, anchor.x, ys, yLo, yHi);
+      node.dataset.idx = String(i);
       if (prev && motion && (fromX || fromY)) {
         node.animate([{ transform: `translate(${fromX}px, ${fromY}px)` }, { transform: 'translate(0px, 0px)' }], { duration: MOVE_MS, easing: EASE_OUT });
       } else if (!prev && fade) {
@@ -366,7 +371,9 @@ export class Stage {
           : [{ opacity: 0 }, { opacity: 1 }];
         node.animate(frames, { duration: motion ? ENTER_MS : 220, delay, easing: EASE_OUT, fill: 'backwards' });
       }
-      nextEntries.push({ id: prev ? prev.id : this.nextId++, gate, node, x: anchor.x, y: anchor.y });
+      // Where a moved gate came from, for the hover card.
+      const from = prev && prev.gate[1].join() !== gate[1].join() ? { qubits: prev.gate[1], physical: this.step.physical } : null;
+      nextEntries.push({ id: prev ? prev.id : this.nextId++, gate, node, x: anchor.x, y: anchor.y, from });
     });
     for (const e of gone) {
       const frames = motion
@@ -391,12 +398,97 @@ export class Stage {
     const vw = box.W / scale;
     const vh = box.H / scale;
     const cy = fold.h / 2 - ((box.insetTop - box.insetBottom) / 2) / scale;
-    const target = [fold.w / 2 - vw / 2, cy - vh / 2, vw, vh];
-    this.moveCamera(target, motion);
+    this.fitView = [fold.w / 2 - vw / 2, cy - vh / 2, vw, vh];
+    this.content = { w: fold.w, h: fold.h };
+    // A viewer who zoomed in keeps their zoom from pass to pass; the view is
+    // only nudged back if the circuit shrank out from under it.
+    if (this.userView) this.userView = this.clampView(this.userView);
+    this.moveCamera(this.userView || this.fitView, motion);
     return this.layoutInfo;
   }
 
-  moveCamera(target, motion) {
+  // ----- zoom and pan -----
+
+  zoom() {
+    return this.fitView && this.view ? this.fitView[2] / this.view[2] : 1;
+  }
+
+  // Keep the zoom within limits and at least KEEP_VISIBLE of the circuit on
+  // screen in each direction, so the viewer can't lose it.
+  clampView(v) {
+    const fit = this.fitView;
+    const aspect = fit[3] / fit[2];
+    const w = Math.min(Math.max(v[2], fit[2] / MAX_ZOOM), fit[2] / MIN_ZOOM);
+    const h = w * aspect;
+    const cx = v[0] + v[2] / 2;
+    const cy = v[1] + v[3] / 2;
+    const mx = KEEP_VISIBLE * Math.min(w, this.content.w);
+    const my = KEEP_VISIBLE * Math.min(h, this.content.h);
+    const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi);
+    return [clamp(cx - w / 2, mx - w, this.content.w - mx), clamp(cy - h / 2, my - h, this.content.h - my), w, h];
+  }
+
+  setUserView(v, animate) {
+    const next = this.clampView(v);
+    const fit = this.fitView;
+    const nearFit = Math.abs(next[2] - fit[2]) / fit[2] < 0.01
+      && Math.abs(next[0] - fit[0]) < 2 && Math.abs(next[1] - fit[1]) < 2;
+    this.userView = nearFit ? null : next;
+    this.moveCamera(next, animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches, 300);
+    if (this.onViewChange) this.onViewChange();
+  }
+
+  // Zoom by `factor`, keeping the point under (clientX, clientY) still.
+  zoomAt(factor, clientX, clientY, animate = false) {
+    if (!this.view) return;
+    const r = this.svg.getBoundingClientRect();
+    const v = this.userView || this.view;
+    const fx = (clientX - r.left) / r.width;
+    const fy = (clientY - r.top) / r.height;
+    const px = v[0] + fx * v[2];
+    const py = v[1] + fy * v[3];
+    const w = v[2] / factor;
+    const h = v[3] / factor;
+    this.setUserView([px - fx * w, py - fy * h, w, h], animate);
+  }
+
+  zoomCenter(factor, animate = true) {
+    const r = this.svg.getBoundingClientRect();
+    this.zoomAt(factor, r.left + r.width / 2, r.top + r.height / 2, animate);
+  }
+
+  // Pan by a distance in screen pixels.
+  panBy(dx, dy, animate = false) {
+    if (!this.view) return;
+    const r = this.svg.getBoundingClientRect();
+    const v = this.userView || this.view;
+    this.setUserView([v[0] - (dx * v[2]) / r.width, v[1] - (dy * v[3]) / r.height, v[2], v[3]], animate);
+  }
+
+  fit(animate = true) {
+    this.userView = null;
+    if (this.fitView) this.moveCamera(this.fitView, animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches, 360);
+    if (this.onViewChange) this.onViewChange();
+  }
+
+  // ----- hover highlighting -----
+
+  entryAt(node) {
+    const g = node && node.closest ? node.closest('.gate') : null;
+    if (!g || g.classList.contains('is-leaving') || g.dataset.idx === undefined) return null;
+    return this.entries[Number(g.dataset.idx)] || null;
+  }
+
+  highlight({ gates = [], qubits = [] } = {}) {
+    const on = gates.length > 0 || qubits.length > 0;
+    this.svg.classList.toggle('has-hot', on);
+    const hotGates = new Set(gates);
+    for (const e of this.entries) e.node.classList.toggle('is-hot', hotGates.has(e));
+    const hotQ = new Set(qubits.map(String));
+    for (const { node } of this.wires.values()) node.classList.toggle('is-hot', hotQ.has(node.dataset.q));
+  }
+
+  moveCamera(target, motion, duration = MOVE_MS) {
     if (this.cameraFrame) cancelAnimationFrame(this.cameraFrame);
     const from = this.view;
     const apply = (v) => {
@@ -409,7 +501,7 @@ export class Stage {
     }
     const t0 = performance.now();
     const tick = (now) => {
-      const t = Math.min((now - t0) / MOVE_MS, 1);
+      const t = Math.min((now - t0) / duration, 1);
       const k = easeOutQuart(t);
       apply(from.map((a, i) => a + (target[i] - a) * k));
       if (t < 1) this.cameraFrame = requestAnimationFrame(tick);
@@ -422,7 +514,9 @@ export function gateListTable(step, isPhysical) {
   const labelFor = (q) => (isPhysical ? `Q${q}` : `q${q}`);
   const rows = step.gates.map((g, i) => {
     const [name, qs, ps, status] = g;
-    return `<tr><td>${i + 1}</td><td>${gateLabel(name)}</td><td>${qs.map(labelFor).join(', ')}</td><td>${formatParams(name, ps) || '–'}</td><td>${STATUS_WORDS[status]}</td></tr>`;
+    const info = gateInfo(name);
+    const link = `<a class="wiki" href="${wikiUrl(info.wiki)}" target="_blank" rel="noopener" title="${wikiTitle(info.wiki)} (Wikipedia)">${info.full}</a>`;
+    return `<tr><td>${i + 1}</td><td>${gateLabel(name)}</td><td>${qs.map(labelFor).join(', ')}</td><td>${formatParams(name, ps) || '–'}</td><td>${STATUS_WORDS[status]}</td><td>${link}</td></tr>`;
   });
-  return `<table class="gate-table"><thead><tr><th scope="col">#</th><th scope="col">Gate</th><th scope="col">Qubits</th><th scope="col">Parameters</th><th scope="col">This pass</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  return `<table class="gate-table"><thead><tr><th scope="col">#</th><th scope="col">Gate</th><th scope="col">Qubits</th><th scope="col">Parameters</th><th scope="col">This pass</th><th scope="col">Read more (Wikipedia)</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
