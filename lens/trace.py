@@ -109,16 +109,30 @@ def _metrics(dag) -> dict:
     }
 
 
-def _layouts(dag, property_set) -> dict | None:
-    """Where each logical qubit starts and ends, if a layout is known yet."""
-    if property_set["layout"] is None:
-        # Before layout, ElidePermutations may already have dropped SWAPs by
-        # renaming outputs: logical qubit v then ends on wire perm[v].
+def _chosen_layout(dag, property_set, n_logical: int) -> list[int] | None:
+    """Physical qubit picked for each logical wire, before it has been applied."""
+    layout = property_set["layout"]
+    if layout is None:
+        return None
+    try:
+        return [layout[q] for q in dag.qubits[:n_logical]]
+    except KeyError:
+        return None
+
+
+def _layouts(dag, property_set, physical: bool, n_logical: int) -> dict | None:
+    """Wire each logical qubit starts and ends on, in the DAG's own numbering."""
+    if not physical:
+        # Wires are still logical. ElidePermutations may already have dropped
+        # SWAPs by renaming outputs: logical qubit v then ends on wire perm[v].
+        # Ancillas may already be on the DAG (after a successful VF2Layout);
+        # they come after the logical qubits and are left out.
         vpl = property_set["virtual_permutation_layout"]
         if vpl is None:
             return None
-        n = dag.num_qubits()
-        return {"initial": list(range(n)), "final": [vpl[q] for q in dag.qubits]}
+        where = vpl.get_virtual_bits()
+        return {"initial": list(range(n_logical)),
+                "final": [where[q] for q in dag.qubits[:n_logical]]}
     # Between FullAncillaAllocation and EnlargeWithAncilla the layout names
     # ancilla qubits the DAG doesn't have yet; treat that as "not known yet".
     try:
@@ -206,6 +220,7 @@ def trace_circuit(
         "time_ms": 0.0,
         "changed": True,
         "num_qubits": n,
+        "physical": False,
         "metrics": first_metrics,
         "delta": None,
         "gates": _encode_gates(first_gates, ["keep"] * len(first_gates)),
@@ -213,13 +228,19 @@ def trace_circuit(
         "layout": None,
     }]
     raw = [{"circuit": circuit.copy(), "layout": None}]
-    state = {"gates": first_gates, "metrics": first_metrics, "n": n, "layout": None}
+    state = {"gates": first_gates, "metrics": first_metrics, "n": n, "layout": None,
+             "physical": False, "chosen": None}
 
     def callback(**kw):
         pass_, dag, ps = kw["pass_"], kw["dag"], kw["property_set"]
         name = type(pass_).__name__
         gates = _gates(dag)
-        layout = _layouts(dag, ps)
+        # ApplyLayout (or SabreLayout, which applies its own layout) renumbers
+        # the DAG's wires from logical to physical qubits.
+        was_physical = state["physical"]
+        physical = was_physical or name in ("ApplyLayout", "SabreLayout")
+        layout = _layouts(dag, ps, physical, n)
+        chosen = None if physical else _chosen_layout(dag, ps, n)
         changed = gates != state["gates"]
         step = {
             "i": len(steps),
@@ -229,10 +250,14 @@ def trace_circuit(
             "time_ms": round(kw["time"] * 1000, 3),
             "changed": changed,
             "num_qubits": dag.num_qubits(),
+            "physical": physical,
         }
+        if chosen is not None and chosen != state["chosen"]:
+            step["chosen_layout"] = chosen
+        state["chosen"] = chosen
         if changed:
             qubit_map = None
-            if dag.num_qubits() != state["n"] and layout is not None:
+            if physical and not was_physical and layout is not None:
                 qubit_map = layout["initial"]
             allow_moves = qubit_map is not None or step["cause"] in ("routing", "layout")
             statuses, removed = _diff(state["gates"], gates, qubit_map, allow_moves)
@@ -251,6 +276,7 @@ def trace_circuit(
         step["layout"] = layout
         step["layout_changed"] = layout != state["layout"]
         state["layout"] = layout
+        state["physical"] = physical
         steps.append(step)
 
     started = time.perf_counter()
@@ -279,6 +305,7 @@ def trace_circuit(
             "basis": meta["basis"],
             "num_physical": max(num_physical, n),
             "edges": [list(e) for e in edges],
+            "positions": targets_mod.positions(target_id, n),
         },
         "steps": steps,
         "summary": {

@@ -14,6 +14,7 @@ Three targets, chosen so each comparison changes one thing at a time:
 from __future__ import annotations
 
 import itertools
+import math
 
 from qiskit.circuit import Parameter
 from qiskit.circuit.library import Measure
@@ -79,6 +80,29 @@ def coupling_edges(target_id: str, num_qubits: int) -> list[list[int]]:
     else:
         cmap = CouplingMap.from_full(num_qubits)
     return sorted({tuple(sorted(edge)) for edge in cmap.get_edges()})
+
+
+# Drawing coordinates (column, row) for the distance-3 heavy-hex lattice:
+# three rows of five qubits joined by "bridge" qubits on rows 1 and 3.
+HEAVY_HEX_POSITIONS = {
+    2: (0, 0), 14: (1, 0), 1: (2, 0), 13: (3, 0), 0: (4, 0),
+    10: (1, 1), 9: (4, 1),
+    5: (0, 2), 16: (1, 2), 4: (2, 2), 15: (3, 2), 3: (4, 2),
+    12: (0, 3), 11: (3, 3),
+    8: (0, 4), 18: (1, 4), 7: (2, 4), 17: (3, 4), 6: (4, 4),
+}
+
+
+def positions(target_id: str, num_qubits: int) -> list[list[float]]:
+    """Unit-scale drawing coordinates for each physical qubit."""
+    if target_id == "heavy_hex":
+        return [list(HEAVY_HEX_POSITIONS[q]) for q in range(len(HEAVY_HEX_POSITIONS))]
+    # All-to-all: qubits on a circle.
+    return [
+        [round(2 + 2 * math.sin(2 * math.pi * q / num_qubits), 4),
+         round(2 - 2 * math.cos(2 * math.pi * q / num_qubits), 4)]
+        for q in range(num_qubits)
+    ]
 
 
 def pass_manager(target_id: str, num_qubits: int, optimization_level: int, seed: int):
