@@ -1,0 +1,32 @@
+[
+ {
+  "id": "ghz_chain",
+  "title": "GHZ, chain (5 qubits)",
+  "blurb": "Entangles 5 qubits with a line of CNOTs. Neighbour-only interactions fit almost any chip, so this is the control case.",
+  "num_qubits": 5
+ },
+ {
+  "id": "ghz_star",
+  "title": "GHZ, star (5 qubits)",
+  "blurb": "Same state, but qubit 0 talks to all four others. No heavy-hex qubit has four neighbours, so routing must insert SWAPs.",
+  "num_qubits": 5
+ },
+ {
+  "id": "qft",
+  "title": "QFT (5 qubits)",
+  "blurb": "The quantum Fourier transform: every pair of qubits interacts once, so connectivity matters a lot.",
+  "num_qubits": 5
+ },
+ {
+  "id": "grover3",
+  "title": "Grover iteration (3 qubits)",
+  "blurb": "One oracle and one diffuser. Each Toffoli needs all three qubits to interact pairwise, which heavy-hex can't provide directly.",
+  "num_qubits": 3
+ },
+ {
+  "id": "random5",
+  "title": "Random circuit (5 qubits)",
+  "blurb": "Qiskit's random_circuit with depth 4 and fixed seed 1234: a mix of gate types with no structure to exploit.",
+  "num_qubits": 5
+ }
+]
