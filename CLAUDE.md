@@ -73,9 +73,20 @@ GHZ (5 qubits), QFT (5), a 3-qubit Grover iteration, a small random circuit. Cho
 - **Frontend:** render circuits ourselves as SVG/HTML from the gate lists. **Do not** embed matplotlib images: they can't be animated or diffed, and they fail accessibility (no screen-reader text, no keyboard stepping).
 - Live transpilation of user-supplied circuits only if Qollab's runtime supports running Python on demand (see first task).
 
-## First task: verify Qollab
+## Qollab runtime (verified Sat Oct 10 from qollab.xyz/learn/docs/runtime-environment and js-qiskit-projects)
 
-Before writing much code, find out exactly what "runnable on Qollab.xyz" means: whether projects are notebooks, Python apps, static web pages, or something else; what Python and Qiskit versions are available; whether `qiskit-ionq` is installable. The architecture above assumes we can ship a Python trace generator plus a web frontend. Adjust if Qollab differs. (The "runs on the Qollab quantum simulator" requirement is listed for Quantum Impact only, but make sure anything we run there works without errors.)
+- Python runs **in the browser on Pyodide**; no server. Qiskit is always installed (`qiskit>=2.5.2,<3` unless requirements.txt says otherwise). Pure-Python PyPI wheels install from `requirements.txt` (no pip options, markers or URLs).
+- Top-level `index.html` + `main.js` = JS project (page rendered above the console). `index.html` is **body markup only**; script tags don't run; `main.css` is the only stylesheet. External JS only via full URLs (e.g. jsDelivr `+esm`).
+- `main.js` imports Python by dotted name (`import * as service from 'lens.service'`), calls via `.callPromising(...)`. Pass JSON strings across. JS can't read project files; go through Python.
+- Python loads data files **only if the path appears as a plain string literal** (no f-strings / joins).
+- No localStorage/cookies; only GET network requests. Limits: 100 files, 2 MB each. README.md at upload becomes the project card.
+- Keep the run alive (`await new Promise(() => {})`) so Python stays callable after load.
+
+## Status (Sat Oct 10 evening)
+
+Done: trace generator (`lens/`), three targets incl. true IonQ native gates via qiskit-ionq, five presets precomputed, 64 passing tests (incl. per-snapshot statevector equivalence), full frontend, axe clean (light + dark), README/project card, `scripts/package.py` → `dist/transpile-lens-qollab.zip`. Local preview: `python dev/serve.py`.
+
+Open: deploy to Qollab (needs the user's account), confirm `qiskit-ionq` installs on Pyodide (if not, drop it from requirements.txt; presets still work and live tracing skips the IonQ target), GitHub repo link, demo video, submission form.
 
 ## Accessibility (a stated requirement)
 
