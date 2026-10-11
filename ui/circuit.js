@@ -311,7 +311,6 @@ export class Stage {
         node.getAnimations().forEach((a) => a.cancel());
         node.replaceChildren();
         node.dataset.q = String(q);
-        el('rect', { x: 0, y: y - ROW_H / 2 + 4, width: fold.w, height: ROW_H - 8, class: 'wire-hit' }, node);
         el('line', { x1: LEFT - 10, x2: fold.w - RIGHT + 10, y1: y, y2: y, class: 'wire' }, node);
         el('text', { x: 6, y: y + 4, class: 'wire-name' }, node).textContent = labelFor(q);
         if (b === 0 && isPhysical && start.has(q)) {

@@ -1,15 +1,17 @@
 // Hover interactions.
 //
-// 1. The stage card: hovering a gate or a wire in the circuit lights it up
-//    (and the wires or gates it touches), dims the rest, and shows a card
-//    saying what it is, what this pass did to it, and where to read more.
-//    Clicking pins the card so its link can be followed; Escape closes it.
+// 1. The stage card: resting the pointer on a gate lights it and its wires
+//    up, dims the rest, and shows a card saying what the gate is, what this
+//    pass did to it, and where to read more. A short delay keeps cards from
+//    flashing while the pointer just crosses the circuit. Clicking pins the
+//    card so its link can be followed; Escape closes it.
 // 2. Tips: any element with data-tip shows a small tooltip on hover or focus.
 
 import { formatParams, gateLabel } from './format.js';
 import { gateInfo, wikiLink } from './wiki.js';
 
 const HIDE_DELAY = 220;
+const SHOW_DELAY = 140;
 
 function h(tag, cls, text) {
   const node = document.createElement(tag);
@@ -20,9 +22,11 @@ function h(tag, cls, text) {
 
 export function createStageHover({ stage, player, card, getContext }) {
   let hideTimer = null;
+  let showTimer = null;
+  let pending = null;
   let pinned = false;
   let suppressed = false;
-  let current = null; // the gate entry or wire qubit being shown
+  let current = null; // the gate entry being shown
 
   const label = (q, physical) => (physical ? `Q${q}` : `q${q}`);
 
@@ -60,53 +64,22 @@ export function createStageHover({ stage, player, card, getContext }) {
     return [head, verdict, does, more];
   }
 
-  function wireCard(q, ctx) {
-    const step = ctx.step;
-    const head = h('div', 'hc-head');
-    head.append(h('span', 'hc-glyph hc-wire', label(q, ctx.isPhysical)));
-    const titles = h('div');
-    titles.append(h('strong', null, ctx.isPhysical ? `Physical qubit ${q}` : `Logical qubit ${q}`));
-    const touching = step.gates.filter((g) => g[1].includes(q));
-    const twoq = touching.filter((g) => g[1].length >= 2).length;
-    titles.append(h('span', 'hc-sub', `${touching.length} gates on this wire, ${twoq} with other qubits`));
-    head.append(titles);
-    const parts = [head];
-    if (ctx.isPhysical && step.layout) {
-      const startV = step.layout.initial.indexOf(q);
-      const endV = step.layout.final.indexOf(q);
-      const text = startV < 0 && endV < 0
-        ? 'A spare (ancilla) qubit: no logical qubit is placed here.'
-        : `Holds logical q${startV} at the start${endV >= 0 && endV !== startV ? ` and q${endV} at the end: SWAPs moved states between wires` : endV === startV ? ' and still holds it at the end' : ''}.`;
-      parts.push(h('p', 'hc-does', text));
-    } else if (step.layout && step.layout.final[q] !== q) {
-      parts.push(h('p', 'hc-does', `ElidePermutations renamed outputs: this qubit's state ends on wire q${step.layout.final[q]}.`));
-    }
-    const more = h('p', 'hc-more');
-    more.append(wikiLink('Qubit', 'Qubit on Wikipedia'));
-    parts.push(more);
-    return parts;
-  }
-
-  function show(target, clientX, clientY) {
+  function show(entry, clientX, clientY) {
     window.clearTimeout(hideTimer);
     const ctx = getContext();
     if (!ctx) return;
-    if (target.entry) {
-      if (current !== target.entry) {
-        card.querySelector('.hc-body').replaceChildren(...gateCard(target.entry, ctx));
-        stage.highlight({ gates: [target.entry], qubits: target.entry.gate[1] });
-        current = target.entry;
-      }
-    } else if (current !== `w${target.q}`) {
-      card.querySelector('.hc-body').replaceChildren(...wireCard(target.q, ctx));
-      stage.highlight({ gates: stage.entries.filter((e) => e.gate[1].includes(target.q)), qubits: [target.q] });
-      current = `w${target.q}`;
+    if (current !== entry) {
+      card.querySelector('.hc-body').replaceChildren(...gateCard(entry, ctx));
+      stage.highlight({ gates: [entry], qubits: entry.gate[1] });
+      current = entry;
     }
     card.hidden = false;
     place(clientX, clientY);
   }
 
   function hideNow() {
+    window.clearTimeout(showTimer);
+    pending = null;
     pinned = false;
     current = null;
     card.hidden = true;
@@ -120,19 +93,29 @@ export function createStageHover({ stage, player, card, getContext }) {
     hideTimer = window.setTimeout(hideNow, HIDE_DELAY);
   }
 
-  function targetFrom(node) {
-    const entry = stage.entryAt(node);
-    if (entry) return { entry };
-    const wire = node.closest ? node.closest('.wire-row') : null;
-    if (wire && wire.dataset.q !== undefined) return { q: Number(wire.dataset.q) };
-    return null;
-  }
-
   stage.svg.addEventListener('pointermove', (e) => {
     if (pinned || suppressed || e.pointerType === 'touch') return;
-    const target = targetFrom(e.target);
-    if (target) show(target, e.clientX, e.clientY);
-    else hideSoon();
+    const entry = stage.entryAt(e.target);
+    if (!entry) {
+      window.clearTimeout(showTimer);
+      pending = null;
+      hideSoon();
+      return;
+    }
+    if (entry === current) {
+      window.clearTimeout(hideTimer);
+      place(e.clientX, e.clientY);
+      return;
+    }
+    // Wait for the pointer to rest on a gate before showing its card.
+    const { clientX, clientY } = e;
+    if (entry !== pending) {
+      pending = entry;
+      window.clearTimeout(showTimer);
+      showTimer = window.setTimeout(() => {
+        if (pending === entry) show(entry, clientX, clientY);
+      }, SHOW_DELAY);
+    }
   });
   stage.svg.addEventListener('pointerleave', hideSoon);
   card.addEventListener('pointerenter', () => window.clearTimeout(hideTimer));
@@ -143,15 +126,16 @@ export function createStageHover({ stage, player, card, getContext }) {
   });
 
   return {
-    // Click (or tap) on a gate or wire pins its card; on empty space unpins.
+    // Click (or tap) on a gate pins its card; on empty space unpins.
     click(node, clientX, clientY) {
-      const target = targetFrom(node);
-      if (!target) {
+      const entry = stage.entryAt(node);
+      if (!entry) {
         hideNow();
         return;
       }
+      window.clearTimeout(showTimer);
       current = null;
-      show(target, clientX, clientY);
+      show(entry, clientX, clientY);
       pinned = true;
       card.classList.add('is-pinned');
     },

@@ -109,11 +109,11 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 .player.is-panning .stage { cursor: grabbing; }
 
 .wire { stroke: var(--st-wire); stroke-width: 1.3; transition: stroke 160ms, opacity 160ms; }
-.wire-hit { fill: transparent; cursor: pointer; }
 .wire-name { fill: var(--st-ink-2); font: 500 12.5px var(--mono); transition: fill 160ms; }
 .wire-logical { fill: var(--st-ink-2); font: 11.5px var(--mono); opacity: 0.8; }
 
 .gate { color: var(--st-ink); transform-box: fill-box; transform-origin: center; cursor: pointer; transition: opacity 160ms; }
+.gate-line, .gate-param, .badge { pointer-events: none; }
 .gate.is-leaving { pointer-events: none; }
 .gate-box { fill: var(--st-gate); stroke: var(--st-gate-line); stroke-width: 1.4; transition: stroke-width 140ms; }
 .gate-label { fill: currentColor; font: 500 12.5px var(--mono); }
@@ -134,9 +134,9 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 .badge-mark { stroke: var(--st-bg); stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
 /* hover: the focused gate or wire lights up, everything else steps back */
-.stage.has-hot .gate:not(.is-hot) { opacity: 0.22; }
-.stage.has-hot .wire-row:not(.is-hot) .wire { opacity: 0.45; }
-.gate.is-hot { filter: drop-shadow(0 0 6px rgb(255 140 66 / 0.55)); }
+.stage.has-hot .gate:not(.is-hot) { opacity: 0.4; }
+.stage.has-hot .wire-row:not(.is-hot) .wire { opacity: 0.6; }
+.gate.is-hot { filter: drop-shadow(0 0 4px rgb(255 140 66 / 0.4)); }
 .gate.is-hot .gate-box, .gate.is-hot .gate-target { stroke-width: 2.8; }
 .gate.s-keep.is-hot { color: #fff; }
 .gate.s-keep.is-hot .gate-box, .gate.s-keep.is-hot .gate-target { stroke: var(--accent-ink); }
@@ -228,7 +228,6 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 }
 .hc-glyph.s-add { border: 2.5px solid var(--add); background: var(--add-bg); }
 .hc-glyph.s-move { border: 2px dashed var(--move); background: var(--move-bg); }
-.hc-glyph.hc-wire { border-radius: 17px; }
 .hc-status { margin: 0 0 6px; font-weight: 600; }
 .hc-status.s-add { color: var(--add); }
 .hc-status.s-move { color: var(--move); }
@@ -397,8 +396,8 @@ a.wiki::after { content: " ↗"; font-size: 0.85em; }
 .edge { stroke: var(--line); stroke-width: 1.5; }
 .edge-used { stroke: var(--ink-2); }
 .edge-swap { stroke: var(--routing); stroke-dasharray: 5 3; stroke-width: 4px; }
-.edge-hit { stroke: transparent; stroke-width: 12px; cursor: help; }
-.edge-hit:hover { stroke: rgb(255 140 66 / 0.35); }
+.edge-hit { stroke: transparent; stroke-width: 7px; cursor: help; }
+.edge-hit:hover { stroke: rgb(255 140 66 / 0.2); }
 .node { fill: var(--panel); stroke: var(--wire); stroke-width: 1.4; cursor: help; transition: stroke 140ms; }
 .node:hover { stroke: var(--accent-ink); stroke-width: 2.5; }
 .node-used { fill: var(--ink); stroke: var(--ink); }

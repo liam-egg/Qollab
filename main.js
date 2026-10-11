@@ -780,10 +780,12 @@ function wire() {
   player.addEventListener('pointermove', wake);
   player.addEventListener('focusin', wake);
   let resizeTimer = null;
-  window.addEventListener('resize', () => {
+  // Watch the player itself, not the window: a page loaded in a hidden frame
+  // starts at zero size and must lay the circuit out once it becomes visible.
+  new ResizeObserver(() => {
     window.clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(() => state.bundle && goTo(state.pos, { animate: false }), 120);
-  });
+    resizeTimer = window.setTimeout(() => state.bundle && player.clientWidth > 0 && goTo(state.pos, { animate: false }), 120);
+  }).observe(player);
   for (const id of ['err1q', 'err2q', 'rz-free']) $(id).addEventListener('input', renderComparePanel);
   $('run-qasm').addEventListener('click', runCustom);
   $('load-qasm').addEventListener('click', () => { $('qasm').value = state.bundle.circuit.qasm || ''; $('qasm').focus(); });
