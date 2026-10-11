@@ -264,7 +264,9 @@ export class Stage {
     const bar = player.querySelector('.topbar > :last-child').getBoundingClientRect();
     const scrub = player.querySelector('.scrub').getBoundingClientRect();
     const insetTop = bar.bottom - r.top + 20;
-    const insetBottom = r.bottom - scrub.top + (narrow ? 148 : 132);
+    // Room for the caption only while captions are on.
+    const captionRoom = player.classList.contains('no-captions') ? 24 : (narrow ? 148 : 132);
+    const insetBottom = r.bottom - scrub.top + captionRoom;
     return {
       w: Math.max(r.width - (narrow ? 32 : 96), 200),
       h: Math.max(r.height - insetTop - insetBottom, 140),

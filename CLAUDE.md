@@ -82,11 +82,13 @@ GHZ (5 qubits), QFT (5), a 3-qubit Grover iteration, a small random circuit. Cho
 - No localStorage/cookies; only GET network requests. Limits: 100 files, 2 MB each. README.md at upload becomes the project card.
 - Keep the run alive (`await new Promise(() => {})`) so Python stays callable after load.
 
-## Status (Sat Oct 10 evening)
+## Status (Sun Oct 11)
 
-Done: trace generator (`lens/`), three targets incl. true IonQ native gates via qiskit-ionq, five presets precomputed, 64 passing tests (incl. per-snapshot statevector equivalence), full frontend, axe clean (light + dark), README/project card, `scripts/package.py` → `dist/transpile-lens-qollab.zip`. Local preview: `python dev/serve.py`.
+Built and packaged: `dist/transpile-lens-qollab.zip` (rebuild with `python scripts/package.py`). 64 tests pass. Submission kit (form fields, criterion summary, demo script, pre-flight checks) is in `SUBMISSION.md`; thumbnail in `docs/thumbnail.jpg`.
 
-Open: deploy to Qollab (needs the user's account), confirm `qiskit-ionq` installs on Pyodide (if not, drop it from requirements.txt; presets still work and live tracing skips the IonQ target), GitHub repo link, demo video, submission form.
+Official rules (qollab.xyz/programs/hackathon/how-it-works and /terms): captain submits from the hackathon registration page and declares the theme there; 2–3 min demo video at a public link; public MIT repo with dependencies listed; project page must disclose what existed before the window (nothing did; AI assistance is disclosed in README); project stays on Qollab for 12 months.
+
+Open (user): upload + publish on Qollab, pre-flight check (incl. whether `qiskit-ionq` installs on Pyodide), public GitHub repo, demo video, submission form.
 
 ## Accessibility (a stated requirement)
 

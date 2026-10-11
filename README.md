@@ -6,6 +6,8 @@ Theme: **Quantum Unlocked** · License: MIT · Built with Qiskit
 
 This effort is supported by Qollab & IonQ.
 
+**Why Quantum Unlocked:** compilation is the hard, practical step between a textbook circuit and real hardware. It decides how much of the hardware's limited coherence a circuit uses up, and it's usually invisible. Transpile Lens teaches it through an interactive, animated visualisation of the real transpiler.
+
 ## The problem
 
 Before a circuit runs on hardware, the transpiler rewrites it. It translates gates into the device's few native gates, assigns logical qubits to physical ones, inserts SWAPs where the chip lacks a direct connection, and then optimises the result. Circuits routinely come out several times deeper, and the tools people use don't show why. Quirk and IBM Quantum Composer show what a circuit *does*. `circuit.draw()`, `DAGCircuit.draw()` and `plot_circuit_layout()` each give one static snapshot. None of them shows what each transpiler pass changed.
@@ -30,7 +32,14 @@ Presets: GHZ chain (the control case, which fits any chip), GHZ star, 5-qubit QF
 
 ## How to run it
 
-On Qollab: press **Run**, pick any backend (the app doesn't spend credits), and use the page that appears above the console. The run stays live so custom circuits can be traced; press **Stop** when you're done.
+On Qollab:
+
+1. Press **Run** and pick any free simulator, such as the built-in simulator or an IonQ simulator. The app runs Qiskit's transpiler in your browser and never spends credits.
+2. The player appears above the console with the 5-qubit QFT loaded. Press the play button, or step with ← and →.
+3. Switch chips at the top (Heavy-hex, All-to-all with IBM gates, IonQ native) and circuits in the dropdown. Hover gates to see what each pass did to them. Scroll down for the explanation, the cost breakdown, the three-chip comparison and a box for pasting your own OpenQASM.
+4. The run stays live so your own circuits can be transpiled; press **Stop** when you're done.
+
+The app needs a browser Qollab supports (recent Chrome, Edge or Opera, or Firefox 153+).
 
 Locally:
 
@@ -88,8 +97,8 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 - An `aria-live` region announces each step ("Step 3 of 7. SabreLayout, Layout stage. Added 4× SWAP…").
 - Text alternatives: a gate list for every circuit snapshot, a metrics table for every pass, a description of each SVG, and sentences summarising each chart.
 - Okabe-Ito colourblind-safe palette. Added, moved and removed are never shown by colour alone: they also differ by outline style and badge, and decreases are hatched with a ▼.
-- Honours `prefers-reduced-motion`: gates crossfade in place instead of sliding or growing, and the camera cuts instead of zooming. The player is always a dark stage; the details follow `prefers-color-scheme`.
-- axe-core 4.10 (WCAG 2.1 A/AA plus best-practice rules) reports no violations in light or dark mode.
+- Honours `prefers-reduced-motion`: gates crossfade in place instead of sliding or growing, and the camera cuts instead of zooming.
+- Text and controls meet WCAG AA contrast on the dark theme. axe-core 4.10 (WCAG 2.1 A/AA plus best-practice rules) reports no violations.
 
 ## Libraries and licences
 
@@ -102,4 +111,10 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 | pytest | tests only | MIT |
 | [Mona Sans](https://github.com/github/mona-sans) and [Fira Mono](https://github.com/mozilla/Fira) via Google Fonts | interface type | SIL Open Font License 1.1 |
 
-The frontend uses no third-party JavaScript or CSS. All code was written during the hackathon build window.
+The frontend uses no third-party JavaScript. The only external stylesheet is the Google Fonts one that loads the two typefaces. Explanations link to Wikipedia articles (opened in a new tab); no Wikipedia content is copied into the project.
+
+## What existed before the build window
+
+Nothing. Every file was written during the hackathon build window (Oct 9–11, 2026; the first commit is Oct 10, 18:29 PT). No template, fork, tutorial project or earlier personal code was used. The only outside pieces are the libraries and fonts in the table above.
+
+The project was built with AI assistance: Claude Code (Anthropic) wrote code under the author's direction.

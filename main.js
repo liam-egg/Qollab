@@ -485,6 +485,8 @@ function setCaptions(on) {
   state.captions = on;
   player.classList.toggle('no-captions', !on);
   $('cc').setAttribute('aria-pressed', String(on));
+  // The circuit takes back (or gives up) the caption's space.
+  if (state.bundle) goTo(state.pos);
 }
 
 function toggleFullscreen() {
