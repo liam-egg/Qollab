@@ -1,7 +1,7 @@
 // Transpile Lens: entry point. Python (lens/) produces the traces; this file
 // owns the UI. Only JSON strings cross the JS/Python boundary.
 import * as service from 'lens.service';
-import { gateListTable, renderCircuit } from './ui/circuit.js';
+import { gateListTable, Stage } from './ui/circuit.js';
 import { CAUSE_NAMES, noteFor, STAGE_NAMES, STAGE_NOTES } from './ui/explain.js';
 import { formatParams, gateLabel, plural, signed } from './ui/format.js';
 import {
@@ -17,12 +17,17 @@ const state = {
   targetId: 'heavy_hex',
   visible: [], // indices into trace.steps shown on the timeline
   pos: 0, // position within `visible`
+  shownIdx: null, // trace step index currently drawn
   showAll: false,
   metric: 'depth',
   timer: null,
+  captions: true,
+  idleTimer: null,
 };
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const stage = new Stage($('circuit'));
+const player = $('player');
 
 async function callPython(fn, ...args) {
   const result = await fn.callPromising(...args);
@@ -30,6 +35,7 @@ async function callPython(fn, ...args) {
 }
 
 const trace = () => state.bundle.traces[state.targetId];
+const stageName = (s) => STAGE_NAMES[s] || s;
 
 // ---------- steps ----------
 
@@ -40,15 +46,33 @@ function computeVisible() {
     .map((s) => s.i);
 }
 
+// Index of the last changed snapshot at or before step i.
+function effectiveIndex(i) {
+  const steps = trace().steps;
+  let j = i;
+  while (j > 0 && !steps[j].changed) j--;
+  return j;
+}
+
 // A step that changed nothing reuses the last changed snapshot's gates.
 function snapshotAt(i) {
   const steps = trace().steps;
   const step = steps[i];
   if (step.changed) return step;
-  let j = i;
-  while (j > 0 && !steps[j].changed) j--;
-  const base = steps[j];
+  const base = steps[effectiveIndex(i)];
   return { ...step, gates: base.gates.map(([n, q, p]) => [n, q, p, 'keep']), removed: [], num_qubits: base.num_qubits, physical: base.physical };
+}
+
+// 'forward' / 'backward' when the two snapshots are exactly one diff apart,
+// so the stage can trust the diff's statuses when pairing gates.
+function directionBetween(fromIdx, toIdx) {
+  if (fromIdx === null) return null;
+  const a = effectiveIndex(fromIdx);
+  const b = effectiveIndex(toIdx);
+  if (a === b) return 'forward';
+  if (b > a && effectiveIndex(b - 1) === a) return 'forward';
+  if (a > b && effectiveIndex(a - 1) === b) return 'backward';
+  return null;
 }
 
 function previousMetrics(i) {
@@ -56,7 +80,7 @@ function previousMetrics(i) {
   return i > 0 ? steps[i - 1].metrics : steps[0].metrics;
 }
 
-// ---------- explanation ----------
+// ---------- words ----------
 
 function countBy(gates, status) {
   const counts = new Map();
@@ -94,10 +118,25 @@ function stepSummary(step) {
   return `${text[0].toUpperCase()}${text.slice(1)}. Depth ${prev.depth} → ${step.metrics.depth}.`;
 }
 
+function renderCaption(step) {
+  const cap = $('caption');
+  const label = step.i === 0 ? 'Input circuit' : step.pass;
+  const where = step.i === 0 ? trace().target.label : `${stageName(step.stage)} · ${CAUSE_NAMES[step.cause]}`;
+  const tail = step.i === 0 && player.classList.contains('is-poster')
+    ? ' Press play to watch the transpiler rewrite it.'
+    : '';
+  cap.innerHTML = `<span class="cap-head"><strong></strong><span class="cap-where"></span></span><span class="cap-text"></span>`;
+  cap.querySelector('strong').textContent = label;
+  cap.querySelector('.cap-where').textContent = where;
+  cap.querySelector('.cap-text').textContent = stepSummary(step) + tail;
+  if (!reducedMotion.matches) cap.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+}
+
 function renderExplain(step) {
-  const stageName = STAGE_NAMES[step.stage] || step.stage;
-  $('explain-stage').textContent = step.i === 0 ? 'Before transpiling' : `${stageName} stage · counted as ${CAUSE_NAMES[step.cause]}`;
   $('explain-h').textContent = step.i === 0 ? 'Input circuit' : step.pass;
+  $('explain-stage').textContent = step.i === 0
+    ? 'Before transpiling'
+    : `${stageName(step.stage)} stage · counted as ${CAUSE_NAMES[step.cause]} · step ${state.pos + 1} of ${state.visible.length}`;
   const note = step.i === 0 ? { what: state.bundle.circuit.blurb } : noteFor(step.pass);
   $('explain-what').textContent = stepSummary(step);
   const dl = $('explain-delta');
@@ -106,7 +145,7 @@ function renderExplain(step) {
     for (const key of ['depth', 'twoq', 'size', 'swaps']) {
       const label = key === 'swaps' ? 'SWAPs' : METRICS[key].label;
       const d = step.delta[key];
-      dl.insertAdjacentHTML('beforeend', `<div class="${d > 0 ? 'up' : d < 0 ? 'down' : ''}"><dt>${label}</dt><dd>${step.metrics[key]} <span>(${signed(d)})</span></dd></div>`);
+      dl.insertAdjacentHTML('beforeend', `<div class="${d > 0 ? 'up' : d < 0 ? 'down' : ''}"><dt>${label}</dt><dd>${step.metrics[key]} <span>${signed(d)}</span></dd></div>`);
     }
   }
   const why = [note.what, note.why].filter(Boolean).join(' ');
@@ -117,22 +156,36 @@ function renderExplain(step) {
     : '';
 }
 
-// ---------- timeline ----------
+// ---------- scrubber and chapter list ----------
 
-function renderStageStrip() {
-  const strip = $('stage-strip');
-  strip.innerHTML = '';
+function renderScrubber() {
+  const track = $('scrub-track');
+  track.innerHTML = '';
   const steps = trace().steps;
-  let group = null;
+  let lastStage = null;
   state.visible.forEach((idx, pos) => {
     const s = steps[idx];
-    const stage = s.stage;
-    if (!group || group.dataset.stage !== stage) {
-      group = document.createElement('li');
-      group.className = 'stage-group';
-      group.dataset.stage = stage;
-      group.innerHTML = `<span class="stage-name">${STAGE_NAMES[stage] || stage}</span><ol class="stage-passes"></ol>`;
-      strip.appendChild(group);
+    const slot = document.createElement('span');
+    slot.className = `slot cause-${s.cause}${s.stage !== lastStage && pos > 0 ? ' chapter-start' : ''}`;
+    slot.dataset.pos = String(pos);
+    track.appendChild(slot);
+    lastStage = s.stage;
+  });
+}
+
+function renderChapters() {
+  const list = $('chapter-list');
+  list.innerHTML = '';
+  const steps = trace().steps;
+  let lastStage = null;
+  state.visible.forEach((idx, pos) => {
+    const s = steps[idx];
+    if (s.stage !== lastStage) {
+      const head = document.createElement('li');
+      head.className = 'chapter-stage';
+      head.textContent = stageName(s.stage);
+      list.appendChild(head);
+      lastStage = s.stage;
     }
     const li = document.createElement('li');
     const btn = document.createElement('button');
@@ -140,11 +193,16 @@ function renderStageStrip() {
     btn.className = `pass-chip cause-${s.cause}${s.changed ? '' : ' is-quiet'}`;
     btn.dataset.pos = String(pos);
     const d = s.delta ? s.delta.depth : 0;
-    btn.innerHTML = `<span class="chip-name">${s.i === 0 ? 'Input' : s.pass}</span>${s.delta ? `<span class="chip-delta">${signed(d)}</span>` : ''}`;
-    btn.setAttribute('aria-label', `${s.i === 0 ? 'Input circuit' : s.pass}, ${STAGE_NAMES[stage] || stage} stage${s.i === 0 ? '' : `, ${CAUSE_NAMES[s.cause]} change`}${s.delta ? `, depth ${signed(d)}` : ''}`);
-    btn.addEventListener('click', () => goTo(pos, { announce: true }));
+    btn.innerHTML = `<span class="chip-name"></span>${s.delta ? `<span class="chip-delta">${signed(d)}</span>` : ''}`;
+    btn.querySelector('.chip-name').textContent = s.i === 0 ? 'Input' : s.pass;
+    btn.setAttribute('aria-label', `${s.i === 0 ? 'Input circuit' : s.pass}, ${stageName(s.stage)} stage${s.i === 0 ? '' : `, ${CAUSE_NAMES[s.cause]} change`}${s.delta ? `, depth ${signed(d)}` : ''}`);
+    btn.addEventListener('click', () => {
+      stopPlaying();
+      goTo(pos, { announce: true });
+      player.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+    });
     li.appendChild(btn);
-    group.querySelector('.stage-passes').appendChild(li);
+    list.appendChild(li);
   });
 }
 
@@ -154,8 +212,16 @@ function renderTable() {
   tbody.innerHTML = state.visible.map((idx, pos) => {
     const s = steps[idx];
     const m = s.metrics;
-    return `<tr data-pos="${pos}"><td>${s.i}</td><th scope="row">${s.i === 0 ? 'Input' : s.pass}</th><td>${STAGE_NAMES[s.stage] || s.stage}</td><td>${s.i === 0 ? '–' : CAUSE_NAMES[s.cause]}</td><td>${m.depth}${s.delta && s.delta.depth ? ` (${signed(s.delta.depth)})` : ''}</td><td>${m.size}</td><td>${m.twoq}</td><td>${m.twoq_depth}</td><td>${m.swaps}</td><td>${s.time_ms.toFixed(2)}</td></tr>`;
+    return `<tr data-pos="${pos}"><td>${s.i}</td><th scope="row">${s.i === 0 ? 'Input' : s.pass}</th><td>${stageName(s.stage)}</td><td>${s.i === 0 ? '–' : CAUSE_NAMES[s.cause]}</td><td>${m.depth}${s.delta && s.delta.depth ? ` (${signed(s.delta.depth)})` : ''}</td><td>${m.size}</td><td>${m.twoq}</td><td>${m.twoq_depth}</td><td>${m.swaps}</td><td>${s.time_ms.toFixed(2)}</td></tr>`;
   }).join('');
+}
+
+function syncCurrent(container, selector) {
+  for (const node of container.querySelectorAll(selector)) {
+    const current = Number(node.dataset.pos) === state.pos;
+    node.classList.toggle('is-current', current);
+    if (current) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
+  }
 }
 
 function announce(text) {
@@ -165,48 +231,56 @@ function announce(text) {
   window.setTimeout(() => { live.textContent = text; }, 30);
 }
 
-function goTo(pos, { announce: say = false, focusChip = false } = {}) {
+function goTo(pos, { announce: say = false, animate = true } = {}) {
   state.pos = Math.max(0, Math.min(pos, state.visible.length - 1));
   const idx = state.visible[state.pos];
   const step = snapshotAt(idx);
   const total = state.visible.length;
+  const name = step.i === 0 ? 'Input circuit' : step.pass;
+
   const slider = $('step');
   slider.max = String(total - 1);
   slider.value = String(state.pos);
-  const name = step.i === 0 ? 'Input circuit' : step.pass;
   slider.setAttribute('aria-valuetext', `Step ${state.pos + 1} of ${total}: ${name}`);
   $('prev').disabled = state.pos === 0;
   $('next').disabled = state.pos === total - 1;
+  $('position').innerHTML = `<span class="pos-num">${state.pos + 1} / ${total}</span><span class="pos-name"></span>`;
+  $('position').querySelector('.pos-name').textContent = name;
+  for (const slot of $('scrub-track').children) {
+    const p = Number(slot.dataset.pos);
+    slot.classList.toggle('is-played', p <= state.pos);
+    slot.classList.toggle('is-current', p === state.pos);
+  }
 
-  $('circuit-pass').textContent = step.i === 0 ? 'input' : step.pass;
-  const isPhysical = step.physical;
-  const { wires, columns } = renderCircuit($('circuit'), step, { isPhysical });
+  const direction = directionBetween(state.shownIdx, idx);
+  const { wires, columns, bands } = stage.render(step, { isPhysical: step.physical, direction, animate });
+  state.shownIdx = idx;
   const added = step.gates.filter((g) => g[3] === 'add').length;
   const moved = step.gates.filter((g) => g[3] === 'move').length;
-  $('circuit-desc').textContent = `Circuit after ${name}: ${plural(step.gates.length, 'gate')} on ${plural(wires, 'wire')}, about ${plural(columns, 'column')} wide. ${added} added and ${moved} moved by this pass. The gate list below has the same information as text.`;
-  $('gate-list').innerHTML = gateListTable(step, isPhysical);
+  $('circuit-desc').textContent = `Circuit after ${name}: ${plural(step.gates.length, 'gate')} on ${plural(wires, 'wire')}, ${plural(columns, 'column')} wide${bands > 1 ? `, folded onto ${bands} rows` : ''}. ${added} added and ${moved} moved by this pass. The gate list under Details has the same information as text.`;
+  $('gate-list').innerHTML = gateListTable(step, step.physical);
+  renderCaption(step);
   renderExplain(step);
-
-  for (const chip of document.querySelectorAll('.pass-chip')) {
-    const current = Number(chip.dataset.pos) === state.pos;
-    chip.classList.toggle('is-current', current);
-    if (current) {
-      chip.setAttribute('aria-current', 'step');
-      chip.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
-      if (focusChip) chip.focus();
-    } else {
-      chip.removeAttribute('aria-current');
-    }
-  }
-  for (const row of $('metrics-table').querySelectorAll('tbody tr')) {
-    const current = Number(row.dataset.pos) === state.pos;
-    row.classList.toggle('is-current', current);
-    if (current) row.setAttribute('aria-current', 'step'); else row.removeAttribute('aria-current');
-  }
+  syncCurrent($('chapter-list'), '.pass-chip');
+  syncCurrent($('metrics-table'), 'tbody tr');
   if (say) {
-    const stage = STAGE_NAMES[step.stage] || step.stage;
-    announce(`Step ${state.pos + 1} of ${total}. ${name}${step.i === 0 ? '' : `, ${stage} stage`}. ${stepSummary(step)}`);
+    announce(`Step ${state.pos + 1} of ${total}. ${name}${step.i === 0 ? '' : `, ${stageName(step.stage)} stage`}. ${stepSummary(step)}`);
   }
+}
+
+// ---------- playback ----------
+
+function leavePoster() {
+  if (!player.classList.contains('is-poster')) return;
+  player.classList.remove('is-poster');
+  renderCaption(snapshotAt(state.visible[state.pos]));
+}
+
+function setPlaying(on) {
+  player.classList.toggle('is-playing', on);
+  $('play').setAttribute('aria-label', on ? 'Pause' : 'Play');
+  $('play').title = on ? 'Pause (Space)' : 'Play (Space)';
+  if (!on) wake();
 }
 
 function stopPlaying() {
@@ -214,26 +288,67 @@ function stopPlaying() {
     window.clearInterval(state.timer);
     state.timer = null;
   }
-  $('play').textContent = 'Play';
-  $('play').setAttribute('aria-pressed', 'false');
+  setPlaying(false);
 }
 
 function togglePlay() {
+  leavePoster();
   if (state.timer) return stopPlaying();
   if (state.pos >= state.visible.length - 1) goTo(0);
-  $('play').textContent = 'Pause';
-  $('play').setAttribute('aria-pressed', 'true');
-  state.timer = window.setInterval(() => {
+  setPlaying(true);
+  const advance = () => {
     if (state.pos >= state.visible.length - 1) return stopPlaying();
     goTo(state.pos + 1, { announce: true });
-  }, reducedMotion.matches ? 2600 : 1600);
+    return undefined;
+  };
+  advance();
+  state.timer = window.setInterval(advance, reducedMotion.matches ? 2800 : 2000);
+  armIdle();
   return undefined;
+}
+
+function step(delta) {
+  stopPlaying();
+  leavePoster();
+  goTo(state.pos + delta, { announce: true });
+}
+
+function jump(pos) {
+  stopPlaying();
+  leavePoster();
+  goTo(pos, { announce: true });
+}
+
+// Controls fade away while playing and the pointer rests, like a video player.
+function wake() {
+  player.classList.remove('is-idle');
+  armIdle();
+}
+
+function armIdle() {
+  window.clearTimeout(state.idleTimer);
+  if (!state.timer) return;
+  state.idleTimer = window.setTimeout(() => {
+    if (state.timer && !player.querySelector('.controls:focus-within, .topbar:focus-within')) player.classList.add('is-idle');
+  }, 2600);
+}
+
+function setCaptions(on) {
+  state.captions = on;
+  player.classList.toggle('no-captions', !on);
+  $('cc').setAttribute('aria-pressed', String(on));
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenEnabled) return;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else player.requestFullscreen().catch(() => {});
 }
 
 // ---------- panels ----------
 
 function renderBudgetPanel() {
-  $('budget-sentence').textContent = budgetSentence(trace(), state.metric);
+  $('budget-detail').textContent = budgetSentence(trace(), state.metric);
   renderBudget($('budget-chart'), trace(), state.metric);
 }
 
@@ -251,7 +366,7 @@ function renderComparePanel() {
     activeId: state.targetId,
     onInspect: (tid) => {
       selectTarget(tid);
-      $('timeline').scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+      player.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
       $('step').focus();
     },
   });
@@ -266,12 +381,13 @@ function renderTargetPicker() {
     btn.type = 'button';
     btn.setAttribute('role', 'radio');
     btn.dataset.target = tid;
-    btn.textContent = t.label;
+    btn.textContent = t.short;
+    btn.title = t.label;
     picker.appendChild(btn);
   }
   syncRadios(picker, 'target', state.targetId);
   const t = trace().target;
-  $('target-blurb').textContent = `${t.connectivity}. Native gates: ${t.basis.join(', ')}.`;
+  $('target-blurb').textContent = `${t.label}: ${t.connectivity}. Native gates: ${t.basis.join(', ')}.`;
 }
 
 function renderMetricPicker() {
@@ -314,21 +430,30 @@ function wireRadios(group, key, onSelect) {
     if (e.key === 'End') j = radios.length - 1;
     if (j === null) return;
     e.preventDefault();
+    e.stopPropagation();
     onSelect(radios[j].dataset[key]);
     group.querySelector(`[data-${key}="${radios[j].dataset[key]}"]`).focus();
   });
 }
 
-function selectTarget(tid, { keepFinal = false } = {}) {
+function selectTarget(tid) {
   stopPlaying();
+  const keepPos = state.bundle && state.targetId !== tid && !player.classList.contains('is-poster');
   state.targetId = tid;
   renderTargetPicker();
   computeVisible();
-  renderStageStrip();
+  renderScrubber();
+  renderChapters();
   renderTable();
   renderBudgetPanel();
   renderComparePanel();
-  goTo(keepFinal ? state.visible.length - 1 : 0);
+  // Switching chips mid-way lands on the final circuit and reflows the gates
+  // from one chip's result to the other's; from the poster it starts at the
+  // input. shownIdx belongs to the old trace, so drop it.
+  state.shownIdx = null;
+  goTo(keepPos ? state.visible.length - 1 : 0, { animate: keepPos });
+  $('budget-sentence').textContent = budgetSentence(trace(), 'depth');
+  $('info-title').textContent = `${state.bundle.circuit.title} · ${trace().target.label}`;
   announce(`${trace().target.label}. ${budgetSentence(trace(), 'depth')}`);
 }
 
@@ -337,11 +462,13 @@ function showBundle(bundle) {
   if (!bundle.traces[state.targetId]) state.targetId = bundle.order[0];
   $('preset-blurb').textContent = bundle.circuit.blurb;
   const v = bundle.versions;
-  $('versions').textContent = `seed ${bundle.seed}, optimization level ${bundle.optimization_level}, Qiskit ${v.qiskit}${v.qiskit_ionq ? `, qiskit-ionq ${v.qiskit_ionq}` : ''}`;
+  $('versions').textContent = `Seed ${bundle.seed}, optimization level ${bundle.optimization_level}, Qiskit ${v.qiskit}${v.qiskit_ionq ? `, qiskit-ionq ${v.qiskit_ionq}` : ''}`;
+  player.classList.add('is-poster');
   selectTarget(state.targetId);
 }
 
 async function loadPreset(id) {
+  stopPlaying();
   if (!state.bundles.has(id)) state.bundles.set(id, await callPython(service.get_trace, id));
   showBundle(state.bundles.get(id));
 }
@@ -366,7 +493,7 @@ async function runCustom() {
     select.value = 'custom';
     state.bundles.set('custom', result);
     showBundle(result);
-    $('timeline').scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+    player.scrollIntoView({ behavior: reducedMotion.matches ? 'auto' : 'smooth' });
   } catch (err) {
     status.textContent = `Something went wrong running Python: ${err.message || err}`;
   } finally {
@@ -376,6 +503,79 @@ async function runCustom() {
 
 // ---------- wiring ----------
 
+function slotAt(clientX) {
+  const slots = [...$('scrub-track').children];
+  let best = 0;
+  let bestDist = Infinity;
+  slots.forEach((slot, i) => {
+    const r = slot.getBoundingClientRect();
+    const d = clientX < r.left ? r.left - clientX : clientX > r.right ? clientX - r.right : 0;
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return { pos: best, slot: slots[best] };
+}
+
+function showTip(clientX) {
+  const { pos, slot } = slotAt(clientX);
+  const s = trace().steps[state.visible[pos]];
+  const tip = $('scrub-tip');
+  tip.textContent = `${s.i === 0 ? 'Input' : s.pass} · ${stageName(s.stage)}`;
+  tip.hidden = false;
+  const track = $('scrub').getBoundingClientRect();
+  const r = slot.getBoundingClientRect();
+  const half = tip.offsetWidth / 2;
+  const x = Math.max(half, Math.min(r.left + r.width / 2 - track.left, track.width - half));
+  tip.style.left = `${x}px`;
+}
+
+function wireScrubber() {
+  const scrub = $('scrub');
+  let dragging = false;
+  const seek = (e) => {
+    const { pos } = slotAt(e.clientX);
+    if (pos !== state.pos) jump(pos);
+  };
+  scrub.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    scrub.setPointerCapture(e.pointerId);
+    seek(e);
+    $('step').focus({ preventScroll: true });
+  });
+  scrub.addEventListener('pointermove', (e) => {
+    showTip(e.clientX);
+    if (dragging) seek(e);
+  });
+  const end = () => { dragging = false; };
+  scrub.addEventListener('pointerup', end);
+  scrub.addEventListener('pointercancel', end);
+  scrub.addEventListener('pointerleave', () => { if (!dragging) $('scrub-tip').hidden = true; });
+}
+
+function wireKeys() {
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    const inPlayer = player.contains(t) || t === document.body;
+    if (!inPlayer) return;
+    const isSlider = t.id === 'step';
+    if (t.matches('select, textarea') || (t.matches('input') && !isSlider)) return;
+    const key = e.key.toLowerCase();
+    if ((key === ' ' || key === 'k') && !t.matches('button, a')) {
+      e.preventDefault();
+      togglePlay();
+    } else if (key === 'c') {
+      setCaptions(!state.captions);
+    } else if (key === 'f') {
+      toggleFullscreen();
+    } else if (!isSlider && ['arrowright', 'arrowleft', 'home', 'end'].includes(key)) {
+      e.preventDefault();
+      const moves = { arrowright: state.pos + 1, arrowleft: state.pos - 1, home: 0, end: state.visible.length - 1 };
+      jump(moves[key]);
+    }
+    wake();
+  });
+}
+
 function wire() {
   $('preset').addEventListener('change', (e) => loadPreset(e.target.value));
   wireRadios($('target-picker'), 'target', (tid) => selectTarget(tid));
@@ -384,31 +584,35 @@ function wire() {
     renderMetricPicker();
     renderBudgetPanel();
   });
-  $('step').addEventListener('input', (e) => { stopPlaying(); goTo(Number(e.target.value), { announce: true }); });
-  $('prev').addEventListener('click', () => { stopPlaying(); goTo(state.pos - 1, { announce: true }); });
-  $('next').addEventListener('click', () => { stopPlaying(); goTo(state.pos + 1, { announce: true }); });
+  $('step').addEventListener('input', (e) => jump(Number(e.target.value)));
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
   $('play').addEventListener('click', togglePlay);
+  $('big-play').addEventListener('click', () => { togglePlay(); $('play').focus({ preventScroll: true }); });
+  $('cc').addEventListener('click', () => setCaptions(!state.captions));
+  if (document.fullscreenEnabled) {
+    $('fullscreen').hidden = false;
+    $('fullscreen').addEventListener('click', toggleFullscreen);
+  }
   $('show-all').addEventListener('change', (e) => {
     const currentIdx = state.visible[state.pos];
     state.showAll = e.target.checked;
     computeVisible();
-    renderStageStrip();
+    renderScrubber();
+    renderChapters();
     renderTable();
     const pos = state.visible.findIndex((i) => i >= currentIdx);
-    goTo(pos < 0 ? state.visible.length - 1 : pos);
+    goTo(pos < 0 ? state.visible.length - 1 : pos, { animate: false });
   });
-  // Arrow keys / Home / End step the timeline from anywhere in the timeline
-  // panel or the circuit, not just the slider (which handles them natively).
-  const stepKeys = (e) => {
-    if (e.target.matches('input, textarea, select') || e.altKey || e.ctrlKey || e.metaKey) return;
-    const moves = { ArrowRight: state.pos + 1, ArrowLeft: state.pos - 1, Home: 0, End: state.visible.length - 1 };
-    if (!(e.key in moves)) return;
-    e.preventDefault();
-    stopPlaying();
-    goTo(moves[e.key], { announce: true, focusChip: e.target.classList.contains('pass-chip') });
-  };
-  $('timeline').addEventListener('keydown', stepKeys);
-  $('circuit-scroll').addEventListener('keydown', stepKeys);
+  wireScrubber();
+  wireKeys();
+  player.addEventListener('pointermove', wake);
+  player.addEventListener('focusin', wake);
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => state.bundle && goTo(state.pos, { animate: false }), 120);
+  });
   for (const id of ['err1q', 'err2q', 'rz-free']) $(id).addEventListener('input', renderComparePanel);
   $('run-qasm').addEventListener('click', runCustom);
   $('load-qasm').addEventListener('click', () => { $('qasm').value = state.bundle.circuit.qasm || ''; $('qasm').focus(); });
@@ -424,7 +628,6 @@ async function start() {
     $('preset').value = first.id;
     await loadPreset(first.id);
     $('qasm').value = state.bundle.circuit.qasm || '';
-    $('load-status').textContent = '';
     $('load-status').hidden = true;
   } catch (err) {
     $('load-status').textContent = `Couldn't load the traces: ${err.message || err}`;

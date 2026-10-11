@@ -1,139 +1,159 @@
-<a class="skip" href="#timeline">Skip to the pass timeline</a>
-<main class="app" id="app">
-  <header class="masthead">
-    <div>
-      <h1>Transpile Lens</h1>
-      <p class="tagline">Watch the Qiskit transpiler rewrite a circuit for real hardware, one pass at a time, and see where the extra depth comes from.</p>
+<a class="skip" href="#player">Skip to the player</a>
+<main id="app">
+  <section class="player is-poster" id="player" aria-label="Transpiler player">
+    <svg class="stage" id="circuit" role="img" aria-labelledby="circuit-desc"><desc id="circuit-desc"></desc><g class="wires"></g><g class="gates"></g></svg>
+
+    <div class="topbar">
+      <h1 class="wordmark">Transpile Lens</h1>
+      <div class="pick">
+        <label for="preset" class="sr-only">Circuit</label>
+        <select id="preset"></select>
+      </div>
+      <div class="segmented" id="target-picker" role="radiogroup" aria-label="Hardware target"></div>
+      <ul class="legend" aria-label="How to read the diagram">
+        <li class="key key-keep">unchanged</li>
+        <li class="key key-add">added by this pass</li>
+        <li class="key key-move">moved to other qubits</li>
+      </ul>
+    </div>
+
+
+    <button type="button" class="big-play" id="big-play" aria-label="Play the transpiler, pass by pass">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+    </button>
+
+    <p class="caption" id="caption"></p>
+
+    <div class="controls" id="controls">
+      <div class="scrub" id="scrub">
+        <label for="step" class="sr-only">Pass</label>
+        <input type="range" class="scrub-input" id="step" min="0" max="0" value="0" aria-describedby="step-hint">
+        <div class="scrub-track" id="scrub-track" aria-hidden="true"></div>
+        <div class="scrub-tip" id="scrub-tip" aria-hidden="true" hidden></div>
+      </div>
+      <div class="control-row">
+        <button type="button" class="ctl" id="play" aria-label="Play" title="Play (Space)">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="i-play"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="i-pause"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+        </button>
+        <button type="button" class="ctl" id="prev" aria-label="Previous pass" title="Previous pass (←)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6zM19 5.5v13L9.5 12z"/></svg>
+        </button>
+        <button type="button" class="ctl" id="next" aria-label="Next pass" title="Next pass (→)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5zM5 5.5v13L14.5 12z"/></svg>
+        </button>
+        <p class="position" id="position"></p>
+        <span class="spacer"></span>
+        <label class="ctl-toggle" title="Include analysis passes that changed nothing">
+          <input type="checkbox" id="show-all"> All passes
+        </label>
+        <button type="button" class="ctl" id="cc" aria-pressed="true" aria-label="Captions" title="Captions (C)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.5 10.2a2.3 2.3 0 1 0 0 3.6M16.5 10.2a2.3 2.3 0 1 0 0 3.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="ctl" id="fullscreen" aria-label="Full screen" title="Full screen (F)" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <a class="ctl details-link" href="#details" title="Explanation, costs and comparison">
+          Details
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+      <p class="sr-only" id="step-hint">Left and right arrows step through passes, Home and End jump to the input and the final circuit, Space plays and pauses.</p>
     </div>
     <p class="status" id="load-status" role="status">Loading traces…</p>
-  </header>
-
-  <section class="controls" aria-label="Circuit and hardware">
-    <div class="field">
-      <label for="preset">Circuit</label>
-      <select id="preset"></select>
-      <p class="hint" id="preset-blurb"></p>
-    </div>
-    <fieldset class="field target-picker">
-      <legend>Hardware target</legend>
-      <div class="segmented" id="target-picker" role="radiogroup" aria-label="Hardware target"></div>
-      <p class="hint" id="target-blurb"></p>
-    </fieldset>
   </section>
 
-  <section class="panel timeline-panel" id="timeline" aria-labelledby="timeline-h">
-    <div class="panel-head">
-      <h2 id="timeline-h">Pass timeline</h2>
-      <label class="toggle"><input type="checkbox" id="show-all"> Show passes that changed nothing</label>
-    </div>
-    <div class="scrubber">
-      <button type="button" class="btn icon" id="prev" aria-label="Previous pass" title="Previous pass (←)">‹</button>
-      <label for="step" class="scrub-label">Step</label>
-      <input type="range" id="step" min="0" max="0" value="0" aria-describedby="step-hint">
-      <button type="button" class="btn icon" id="next" aria-label="Next pass" title="Next pass (→)">›</button>
-      <button type="button" class="btn" id="play" aria-pressed="false">Play</button>
-    </div>
-    <p class="hint" id="step-hint">Arrow keys step through passes; Home and End jump to the input and the final circuit.</p>
-    <p class="cause-legend">Kind of change:
-      <span><i class="cause-mark cause-translation" aria-hidden="true"></i>translation</span>
-      <span><i class="cause-mark cause-routing" aria-hidden="true"></i>routing</span>
-      <span><i class="cause-mark cause-optimization" aria-hidden="true"></i>optimization</span>
-      <span><i class="cause-mark cause-layout" aria-hidden="true"></i>layout (renumbering only)</span>
-    </p>
-    <ol class="stage-strip" id="stage-strip" aria-label="Passes grouped by stage"></ol>
-  </section>
+  <div class="info" id="details">
+    <div class="info-main">
+      <header class="info-head">
+        <h2 id="info-title">Transpile Lens</h2>
+        <p class="lede" id="budget-sentence"></p>
+        <p class="blurb" id="preset-blurb"></p>
+        <p class="blurb" id="target-blurb"></p>
+      </header>
 
-  <div class="grid-main">
-    <section class="panel circuit-panel" aria-labelledby="circuit-h">
-      <div class="panel-head">
-        <h2 id="circuit-h">Circuit after <span id="circuit-pass">input</span></h2>
-        <div class="legend" aria-hidden="true">
-          <span class="key key-keep">unchanged</span>
-          <span class="key key-add">added by this pass</span>
-          <span class="key key-move">moved to other qubits</span>
+      <section class="block now" aria-labelledby="explain-h">
+        <h3 id="explain-h">Input circuit</h3>
+        <p class="meta" id="explain-stage"></p>
+        <p class="what" id="explain-what"></p>
+        <dl class="delta-list" id="explain-delta"></dl>
+        <p class="why" id="explain-why"></p>
+        <p class="removed" id="explain-removed"></p>
+        <details class="text-alt">
+          <summary>Gate list for this step (text version of the diagram)</summary>
+          <div id="gate-list"></div>
+        </details>
+      </section>
+
+      <section class="block" aria-labelledby="budget-h">
+        <div class="block-head">
+          <h3 id="budget-h">Where the cost comes from</h3>
+          <div class="segmented small" id="budget-metric" role="radiogroup" aria-label="Metric for the cost breakdown"></div>
         </div>
-      </div>
-      <div class="circuit-scroll" id="circuit-scroll" tabindex="0" role="region" aria-label="Circuit diagram, scrolls horizontally">
-        <svg id="circuit" role="img" aria-labelledby="circuit-desc"><desc id="circuit-desc"></desc></svg>
-      </div>
-      <details class="text-alt">
-        <summary>Gate list for this step (text version of the diagram)</summary>
-        <div id="gate-list"></div>
-      </details>
-    </section>
+        <p class="sentence" id="budget-detail"></p>
+        <div id="budget-chart"></div>
+        <p class="fineprint">Depth isn't additive. Each bar is the change between consecutive snapshots, credited to the pass that made it and grouped by what kind of change it was. Qiskit's stage names don't always match: SabreLayout runs in the layout stage but inserts SWAPs, so it counts as routing.</p>
+      </section>
 
-    <aside class="panel explain-panel" aria-labelledby="explain-h">
-      <p class="eyebrow" id="explain-stage"></p>
-      <h2 id="explain-h">Input circuit</h2>
-      <p class="what" id="explain-what"></p>
-      <dl class="delta-list" id="explain-delta"></dl>
-      <p class="why" id="explain-why"></p>
-      <p class="removed" id="explain-removed"></p>
+      <section class="block" aria-labelledby="compare-h">
+        <h3 id="compare-h">Same circuit, three chips</h3>
+        <p class="sentence" id="compare-sentence"></p>
+        <div class="compare-grid" id="compare-grid"></div>
+        <p class="fineprint">Each map shows the chip's connections and where every logical qubit starts. Thicker lines carry more two-qubit gates in the final circuit; dashed lines are connections where routing put a SWAP.</p>
+        <div class="error-model">
+          <h4>Estimated success probability</h4>
+          <p class="fineprint">Product of (1 − error) over every gate, with the <strong>illustrative error rates below</strong>. These are assumptions for comparison, not device specifications, and they ignore idle errors, crosstalk and readout. Every target uses the same rates, so differences come from gate counts alone.</p>
+          <div class="sliders">
+            <label for="err1q">One-qubit gate error <output id="err1q-out" for="err1q"></output></label>
+            <input type="range" id="err1q" min="0" max="0.01" step="0.0001" value="0.001">
+            <label for="err2q">Two-qubit gate error <output id="err2q-out" for="err2q"></output></label>
+            <input type="range" id="err2q" min="0" max="0.05" step="0.0005" value="0.01">
+            <label class="toggle"><input type="checkbox" id="rz-free" checked> Treat RZ as error-free (on IBM-style chips it's a virtual frame change)</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="table-h">
+        <h3 id="table-h">Metrics for every pass</h3>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Metrics table, scrollable">
+          <table class="metrics" id="metrics-table">
+            <caption class="sr-only">Depth, gate counts and SWAPs after each pass on the selected target. The current step is marked.</caption>
+            <thead>
+              <tr><th scope="col">#</th><th scope="col">Pass</th><th scope="col">Stage</th><th scope="col">Kind of change</th><th scope="col">Depth</th><th scope="col">Gates</th><th scope="col">2-qubit gates</th><th scope="col">2-qubit depth</th><th scope="col">SWAPs</th><th scope="col">Time (ms)</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="custom-h">
+        <h3 id="custom-h">Try your own circuit</h3>
+        <p>Paste OpenQASM 2 (or 3) with up to 10 qubits. It's transpiled live in your browser by Qiskit running on Pyodide, so expect a few seconds. Final measurements are dropped.</p>
+        <label for="qasm" class="sr-only">OpenQASM source</label>
+        <textarea id="qasm" rows="9" spellcheck="false"></textarea>
+        <div class="row">
+          <button type="button" class="btn primary" id="run-qasm">Transpile it</button>
+          <button type="button" class="btn" id="load-qasm">Load the current preset's QASM</button>
+          <p class="status" id="qasm-status" role="status"></p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>Built with <a href="https://www.ibm.com/quantum/qiskit" target="_blank" rel="noopener">Qiskit</a> and <a href="https://github.com/qiskit-community/qiskit-ionq" target="_blank" rel="noopener">qiskit-ionq</a>. <span id="versions"></span>. MIT licensed.</p>
+        <p>This effort is supported by Qollab &amp; IonQ.</p>
+      </footer>
+    </div>
+
+    <aside class="chapters" aria-labelledby="chapters-h">
+      <h3 id="chapters-h">Passes</h3>
+      <p class="cause-legend">
+        <span><i class="cause-mark cause-translation" aria-hidden="true"></i>translation</span>
+        <span><i class="cause-mark cause-routing" aria-hidden="true"></i>routing</span>
+        <span><i class="cause-mark cause-optimization" aria-hidden="true"></i>optimization</span>
+        <span><i class="cause-mark cause-layout" aria-hidden="true"></i>layout</span>
+      </p>
+      <ol class="chapter-list" id="chapter-list"></ol>
     </aside>
   </div>
-
-  <section class="panel" aria-labelledby="budget-h">
-    <div class="panel-head">
-      <h2 id="budget-h">Where the cost comes from</h2>
-      <div class="segmented small" id="budget-metric" role="radiogroup" aria-label="Metric for the cost breakdown"></div>
-    </div>
-    <p class="budget-sentence" id="budget-sentence"></p>
-    <div id="budget-chart" class="budget-chart"></div>
-    <p class="fineprint">Depth isn't additive. Each bar is the change between consecutive snapshots, credited to the pass that made it and grouped by what kind of change it was. Qiskit's stage names don't always match: SabreLayout runs in the layout stage but inserts SWAPs, so it counts as routing.</p>
-  </section>
-
-  <section class="panel" aria-labelledby="compare-h">
-    <div class="panel-head">
-      <h2 id="compare-h">Same circuit, three chips</h2>
-    </div>
-    <p class="compare-sentence" id="compare-sentence"></p>
-    <div class="compare-grid" id="compare-grid"></div>
-    <p class="fineprint">Each map shows the chip's connections and where every logical qubit starts. Thicker lines carry more two-qubit gates in the final circuit; dashed lines are connections where routing put a SWAP.</p>
-    <div class="error-model">
-      <h3>Estimated success probability</h3>
-      <p class="fineprint">Product of (1 − error) over every gate, with the <strong>illustrative error rates below</strong>. These are assumptions for comparison, not device specifications, and they ignore idle errors, crosstalk and readout. Every target uses the same rates, so differences come from gate counts alone.</p>
-      <div class="sliders">
-        <label for="err1q">One-qubit gate error <output id="err1q-out" for="err1q"></output></label>
-        <input type="range" id="err1q" min="0" max="0.01" step="0.0001" value="0.001">
-        <label for="err2q">Two-qubit gate error <output id="err2q-out" for="err2q"></output></label>
-        <input type="range" id="err2q" min="0" max="0.05" step="0.0005" value="0.01">
-        <label class="toggle"><input type="checkbox" id="rz-free" checked> Treat RZ as error-free (on IBM-style chips it's a virtual frame change)</label>
-      </div>
-    </div>
-  </section>
-
-  <section class="panel" aria-labelledby="table-h">
-    <div class="panel-head">
-      <h2 id="table-h">Metrics for every pass</h2>
-    </div>
-    <div class="table-scroll" tabindex="0" role="region" aria-label="Metrics table, scrollable">
-      <table class="metrics" id="metrics-table">
-        <caption class="sr-only">Depth, gate counts and SWAPs after each pass on the selected target. The current step is marked.</caption>
-        <thead>
-          <tr><th scope="col">#</th><th scope="col">Pass</th><th scope="col">Stage</th><th scope="col">Kind of change</th><th scope="col">Depth</th><th scope="col">Gates</th><th scope="col">2-qubit gates</th><th scope="col">2-qubit depth</th><th scope="col">SWAPs</th><th scope="col">Time (ms)</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel" aria-labelledby="custom-h">
-    <div class="panel-head">
-      <h2 id="custom-h">Try your own circuit</h2>
-    </div>
-    <p>Paste OpenQASM 2 (or 3) with up to 10 qubits. It's transpiled live in your browser by Qiskit running on Pyodide, so expect a few seconds. Final measurements are dropped.</p>
-    <label for="qasm" class="sr-only">OpenQASM source</label>
-    <textarea id="qasm" rows="9" spellcheck="false"></textarea>
-    <div class="row">
-      <button type="button" class="btn primary" id="run-qasm">Transpile it</button>
-      <button type="button" class="btn" id="load-qasm">Load the current preset's QASM</button>
-      <p class="status" id="qasm-status" role="status"></p>
-    </div>
-  </section>
-
-  <footer class="footer">
-    <p>Built with <a href="https://www.ibm.com/quantum/qiskit" target="_blank" rel="noopener">Qiskit</a> and <a href="https://github.com/qiskit-community/qiskit-ionq" target="_blank" rel="noopener">qiskit-ionq</a>. Seed and versions: <span id="versions"></span>. MIT licensed.</p>
-    <p>This effort is supported by Qollab &amp; IonQ.</p>
-  </footer>
   <div class="sr-only" aria-live="polite" aria-atomic="true" id="announcer"></div>
 </main>

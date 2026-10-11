@@ -14,7 +14,7 @@ Transpile Lens replays the real Qiskit transpiler pass by pass. It shows each st
 
 ## What it does
 
-- **Pass timeline.** Step through every pass that changed the circuit (or every pass, including analysis passes). Gates the pass added are drawn with a thick outline and a **+** badge; gates moved onto different qubits get a dashed outline and a **↔** badge; removed gates are listed.
+- **A full-screen player for the transpiler.** The circuit fills the screen like a video and plays pass by pass. Gates a pass kept slide to their new positions, gates it moved onto other qubits slide there (dashed outline, **↔** badge), added gates grow in (heavy outline, **+** badge), and removed gates fade out. The view zooms as the circuit grows, and long circuits fold onto extra rows so they stay readable on any screen. The scrubber is split into chapters by transpiler stage, and a subtitle-style caption says what each pass did. Scroll down for the details.
 - **Plain-language explanations** for each pass: what it does in general, and what it did to *this* circuit ("SabreLayout added 4× SWAP; moved 10 gates onto different qubits. Depth 9 → 16.").
 - **Cost breakdown.** For the QFT on heavy-hex, for example: *depth 10 → 45: translation +41, routing +7, optimization −13. Routing inserted 4 SWAPs; translation then expanded each into three CNOTs.* Switch between depth, two-qubit gates, two-qubit depth and total gates.
 - **Same circuit, three chips.** Each comparison changes one thing at a time:
@@ -82,11 +82,11 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 
 ## Accessibility
 
-- Full keyboard control. ←/→ step through passes from the slider, the pass chips or the circuit; Home/End jump to the input or final circuit. Radio groups follow the ARIA pattern, and focus states are visible.
+- Full keyboard control, with video-player shortcuts: Space or K plays and pauses, ←/→ step through passes, Home/End jump to the input or final circuit, C toggles captions, F goes full screen. Player controls fade while playing but come back on any key, pointer movement or focus. Radio groups follow the ARIA pattern, and focus states are visible.
 - An `aria-live` region announces each step ("Step 3 of 7. SabreLayout, Layout stage. Added 4× SWAP…").
 - Text alternatives: a gate list for every circuit snapshot, a metrics table for every pass, a description of each SVG, and sentences summarising each chart.
 - Okabe-Ito colourblind-safe palette. Added, moved and removed are never shown by colour alone: they also differ by outline style and badge, and decreases are hatched with a ▼.
-- Honours `prefers-reduced-motion` and `prefers-color-scheme`.
+- Honours `prefers-reduced-motion`: gates crossfade in place instead of sliding or growing, and the camera cuts instead of zooming. The player is always a dark stage; the details follow `prefers-color-scheme`.
 - axe-core 4.10 (WCAG 2.1 A/AA plus best-practice rules) reports no violations in light or dark mode.
 
 ## Libraries and licences

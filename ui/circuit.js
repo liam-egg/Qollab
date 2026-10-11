@@ -1,6 +1,15 @@
-// Draws one snapshot's gate list as an SVG circuit diagram.
-// Gates are placed greedily into columns in the order the trace lists them
-// (topological order), so the drawing's column count tracks circuit depth.
+// The stage: draws a snapshot's gate list as an SVG circuit that fills the
+// player, and animates between snapshots.
+//
+// Layout. Gates go greedily into columns in the trace's (topological) order,
+// so the column count tracks depth. Long circuits fold onto several bands,
+// like wrapped text, choosing the band count that makes gates largest on the
+// current screen.
+//
+// Motion. Each drawn gate keeps an identity across passes. Going from one
+// snapshot to the next, gates the pass kept stay put or slide to their new
+// column (FLIP), gates it moved onto other qubits slide there, added gates
+// grow in, removed gates fade out, and the camera eases to the new extent.
 
 import { formatParams, gateLabel, STATUS_WORDS } from './format.js';
 
@@ -9,8 +18,15 @@ const ROW_H = 46;
 const COL_W = 50;
 const LEFT = 92;
 const RIGHT = 56;
-const TOP = 26;
+const TOP = 30;
+const BAND_GAP = 30;
 const BOX = 36;
+const MAX_SCALE = 2.4;
+
+const EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+const MOVE_MS = 640;
+const ENTER_MS = 520;
+const EXIT_MS = 240;
 
 function el(name, attrs = {}, parent) {
   const node = document.createElementNS(SVG_NS, name);
@@ -32,9 +48,9 @@ export function visibleWires(step) {
   return [...used].sort((a, b) => a - b);
 }
 
-export function placeGates(gates, rowOf) {
+function placeGates(gates, rowOf) {
   const nextFree = new Map();
-  let width = 0;
+  let columns = 0;
   const placed = gates.map((g) => {
     const rows = g[1].map((q) => rowOf.get(q));
     const lo = Math.min(...rows);
@@ -42,59 +58,31 @@ export function placeGates(gates, rowOf) {
     let col = 0;
     for (let r = lo; r <= hi; r++) col = Math.max(col, nextFree.get(r) || 0);
     for (let r = lo; r <= hi; r++) nextFree.set(r, col + 1);
-    width = Math.max(width, col + 1);
-    return { gate: g, rows, lo, hi, col };
+    columns = Math.max(columns, col + 1);
+    return { rows, lo, hi, col };
   });
-  return { placed, columns: width };
+  return { placed, columns: Math.max(columns, 1) };
 }
 
-// Wire labels. Once a layout exists, wires are physical qubits ("Q7") and the
-// logical qubit that starts / ends on each one is shown at the left / right.
-function wireLabels(step, wires, isPhysical) {
-  const start = new Map();
-  const end = new Map();
-  if (step.layout) {
-    step.layout.initial.forEach((phys, v) => start.set(phys, v));
-    step.layout.final.forEach((phys, v) => end.set(phys, v));
-  } else {
-    wires.forEach((q) => { start.set(q, q); end.set(q, q); });
+// Pick the band count that gives the largest scale in the available box.
+function chooseFold(columns, rowCount, box) {
+  const bandH = (rowCount - 1) * ROW_H + 2 * TOP;
+  let best = null;
+  for (let bands = 1; bands <= Math.min(8, columns); bands++) {
+    const perBand = Math.ceil(columns / bands);
+    const w = LEFT + perBand * COL_W + RIGHT;
+    const h = bands * bandH + (bands - 1) * BAND_GAP;
+    const scale = Math.min(box.w / w, box.h / h);
+    if (!best || scale > best.scale * 1.04) best = { bands, perBand, w, h, bandH, scale };
   }
-  return wires.map((q) => ({
-    q,
-    name: isPhysical ? `Q${q}` : `q${q}`,
-    start: isPhysical && start.has(q) ? `q${start.get(q)}` : '',
-    end: end.has(q) ? `q${end.get(q)}` : '',
-  }));
+  return best;
 }
 
-function describeGate(g, labelFor) {
-  const [name, qs, ps, status] = g;
+function describeGate(gate, labelFor) {
+  const [name, qs, ps, status] = gate;
   const params = formatParams(name, ps);
   const on = qs.map(labelFor).join(name === 'cx' ? ' → ' : ', ');
   return `${gateLabel(name)}${params ? `(${params})` : ''} on ${on}, ${STATUS_WORDS[status]}`;
-}
-
-function drawBadge(g, x, y, status) {
-  if (status === 'keep') return;
-  const badge = el('g', { class: 'badge' }, g);
-  el('circle', { cx: x, cy: y, r: 7 }, badge);
-  const t = el('text', { x, y: y + 3.5, 'text-anchor': 'middle' }, badge);
-  t.textContent = status === 'add' ? '+' : '↔';
-}
-
-function drawBox(g, cx, y1, y2, label, params) {
-  const h = Math.max(BOX, y2 - y1 + BOX);
-  const top = (y1 + y2) / 2 - h / 2;
-  el('rect', { x: cx - BOX / 2, y: top, width: BOX, height: h, rx: 5, class: 'gate-box' }, g);
-  const ty = (y1 + y2) / 2 + (params ? -2 : 4);
-  const t = el('text', { x: cx, y: ty, 'text-anchor': 'middle', class: 'gate-label' }, g);
-  t.textContent = label;
-  if (label.length > 3) t.setAttribute('textLength', String(BOX - 6));
-  if (params) {
-    const p = el('text', { x: cx, y: ty + 11, 'text-anchor': 'middle', class: 'gate-param' }, g);
-    p.textContent = params.length > 7 ? `${params.slice(0, 6)}…` : params;
-  }
-  return top;
 }
 
 const CONTROLLED = {
@@ -113,82 +101,321 @@ const CONTROLLED = {
   csx: { controls: 1, target: '√X' },
 };
 
-export function renderCircuit(svg, step, { isPhysical }) {
-  while (svg.lastChild && svg.lastChild.nodeName !== 'desc') svg.removeChild(svg.lastChild);
-  const wires = visibleWires(step);
-  const rowOf = new Map(wires.map((q, i) => [q, i]));
-  const { placed, columns } = placeGates(step.gates, rowOf);
-  const width = LEFT + Math.max(columns, 1) * COL_W + RIGHT;
-  const height = TOP * 2 + (wires.length - 1) * ROW_H;
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('width', width);
-  svg.setAttribute('height', height);
+function drawBox(g, cx, y1, y2, label, params) {
+  const h = Math.max(BOX, y2 - y1 + BOX);
+  const top = (y1 + y2) / 2 - h / 2;
+  el('rect', { x: cx - BOX / 2, y: top, width: BOX, height: h, rx: 5, class: 'gate-box' }, g);
+  const ty = (y1 + y2) / 2 + (params ? -2 : 4);
+  const t = el('text', { x: cx, y: ty, 'text-anchor': 'middle', class: 'gate-label' }, g);
+  t.textContent = label;
+  if (label.length > 3) t.setAttribute('textLength', String(BOX - 6));
+  if (params) {
+    const p = el('text', { x: cx, y: ty + 11, 'text-anchor': 'middle', class: 'gate-param' }, g);
+    p.textContent = params.length > 7 ? `${params.slice(0, 6)}…` : params;
+  }
+  return top;
+}
 
-  const labels = wireLabels(step, wires, isPhysical);
-  const labelFor = (q) => (isPhysical ? `Q${q}` : `q${q}`);
-  const wireLayer = el('g', { class: 'wires' }, svg);
-  labels.forEach((w, i) => {
-    const y = TOP + i * ROW_H;
-    el('line', { x1: LEFT - 8, x2: width - RIGHT + 8, y1: y, y2: y, class: 'wire' }, wireLayer);
-    const name = el('text', { x: 8, y: y + 4, class: 'wire-name' }, wireLayer);
-    name.textContent = w.name;
-    if (w.start) {
-      const s = el('text', { x: LEFT - 14, y: y + 4, 'text-anchor': 'end', class: 'wire-logical' }, wireLayer);
-      s.textContent = w.start;
+function drawBadge(g, x, y, status) {
+  if (status === 'keep') return;
+  const badge = el('g', { class: 'badge' }, g);
+  el('circle', { cx: x, cy: y, r: 7 }, badge);
+  if (status === 'add') {
+    el('path', { d: `M${x - 3.5} ${y}H${x + 3.5}M${x} ${y - 3.5}V${y + 3.5}`, class: 'badge-mark' }, badge);
+  } else {
+    el('path', { d: `M${x - 4} ${y}H${x + 4}M${x - 1.8} ${y - 2.2}L${x - 4} ${y}L${x - 1.8} ${y + 2.2}M${x + 1.8} ${y - 2.2}L${x + 4} ${y}L${x + 1.8} ${y + 2.2}`, class: 'badge-mark' }, badge);
+  }
+}
+
+// Draws one gate into group g with its top-left anchor at (cx, yLo).
+function drawGate(g, gate, cx, ys, yLo, yHi, labelFor) {
+  const [name, , ps, status] = gate;
+  g.setAttribute('class', `gate s-${status}`);
+  el('title', {}, g).textContent = describeGate(gate, labelFor);
+  const params = formatParams(name, ps);
+  const ctrl = CONTROLLED[name];
+  let badgeY = yLo - BOX / 2;
+  if (ys.length === 1) {
+    badgeY = drawBox(g, cx, yLo, yLo, gateLabel(name), params);
+  } else if (name === 'swap') {
+    el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
+    for (const y of ys) {
+      el('path', { d: `M${cx - 7} ${y - 7}L${cx + 7} ${y + 7}M${cx - 7} ${y + 7}L${cx + 7} ${y - 7}`, class: 'gate-stroke' }, g);
     }
-    if (w.end) {
-      const e = el('text', { x: width - RIGHT + 14, y: y + 4, class: 'wire-logical' }, wireLayer);
-      e.textContent = w.end;
+    badgeY = yLo - 10;
+  } else if (ctrl && ys.length === ctrl.controls + 1) {
+    const targetY = ys[ys.length - 1];
+    el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
+    for (const y of ys.slice(0, -1)) el('circle', { cx, cy: y, r: 5.5, class: 'gate-dot' }, g);
+    if (ctrl.target === 'x') {
+      el('circle', { cx, cy: targetY, r: 12, class: 'gate-target' }, g);
+      el('path', { d: `M${cx - 12} ${targetY}H${cx + 12}M${cx} ${targetY - 12}V${targetY + 12}`, class: 'gate-stroke' }, g);
+    } else if (ctrl.target === 'dot') {
+      el('circle', { cx, cy: targetY, r: 5.5, class: 'gate-dot' }, g);
+      if (params) {
+        const t = el('text', { x: cx + 9, y: (yLo + yHi) / 2 + 4, class: 'gate-param' }, g);
+        t.textContent = params;
+      }
+    } else {
+      drawBox(g, cx, targetY, targetY, ctrl.target, params);
+    }
+    badgeY = yLo - 10;
+  } else {
+    // Generic multi-qubit gate (MS, RZZ, ECR, ...): a box spanning its wires,
+    // with ticks marking the wires it actually acts on.
+    badgeY = drawBox(g, cx, yLo, yHi, gateLabel(name), params);
+    for (const y of ys) el('line', { x1: cx - BOX / 2 - 4, x2: cx - BOX / 2, y1: y, y2: y, class: 'gate-stroke' }, g);
+  }
+  drawBadge(g, cx + BOX / 2 - 2, badgeY + 1, status);
+}
+
+// Translate a previous snapshot's qubit index into the next one's numbering
+// when the wires were renumbered from logical to physical (or back).
+function qubitMapper(prev, next) {
+  if (!prev || prev.physical === next.physical) return (q) => q;
+  if (!prev.physical && next.layout) return (q) => (q < next.layout.initial.length ? next.layout.initial[q] : q);
+  if (prev.physical && prev.layout) {
+    const back = new Map(prev.layout.initial.map((phys, v) => [phys, v]));
+    return (q) => (back.has(q) ? back.get(q) : q);
+  }
+  return (q) => q;
+}
+
+const sigOf = (name, qs, ps) => `${name}|${qs.join(',')}|${ps.join(',')}`;
+const looseOf = (name, ps) => `${name}|${ps.join(',')}`;
+
+function take(pool, key) {
+  const list = pool.get(key);
+  return list && list.length ? list.shift() : null;
+}
+
+// Pair each next gate with a previous drawn gate. `direction` is 'forward' or
+// 'backward' when the two snapshots are one diff apart (then only gates the
+// diff marks as moved may match on name alone), or null for a longer jump.
+function matchGates(prevEntries, prevStep, nextStep, direction) {
+  const map = qubitMapper(prevStep, nextStep);
+  const exact = new Map();
+  const mapped = prevEntries.map((e) => ({ ...e, qs: e.gate[1].map(map) }));
+  for (const e of mapped) {
+    const key = sigOf(e.gate[0], e.qs, e.gate[2]);
+    if (!exact.has(key)) exact.set(key, []);
+    exact.get(key).push(e);
+  }
+  const used = new Set();
+  const result = nextStep.gates.map((g) => {
+    const hit = take(exact, sigOf(g[0], g[1], g[2]));
+    if (hit) used.add(hit.id);
+    return hit ? hit.id : null;
+  });
+  const loose = new Map();
+  for (const e of mapped) {
+    if (used.has(e.id)) continue;
+    if (direction === 'backward' && e.gate[3] !== 'move') continue;
+    const key = looseOf(e.gate[0], e.gate[2]);
+    if (!loose.has(key)) loose.set(key, []);
+    loose.get(key).push(e);
+  }
+  nextStep.gates.forEach((g, i) => {
+    if (result[i] !== null) return;
+    if (direction === 'forward' && g[3] !== 'move') return;
+    const hit = take(loose, looseOf(g[0], g[2]));
+    if (hit) {
+      used.add(hit.id);
+      result[i] = hit.id;
     }
   });
+  return { ids: result, gone: prevEntries.filter((e) => !used.has(e.id)) };
+}
 
-  const gateLayer = el('g', { class: 'gates' }, svg);
-  for (const { gate, rows, lo, hi, col } of placed) {
-    const [name, , ps, status] = gate;
-    const cx = LEFT + col * COL_W + COL_W / 2;
-    const ys = rows.map((r) => TOP + r * ROW_H);
-    const yLo = TOP + lo * ROW_H;
-    const yHi = TOP + hi * ROW_H;
-    const g = el('g', { class: `gate s-${status}` }, gateLayer);
-    el('title', {}, g).textContent = describeGate(gate, labelFor);
-    const params = formatParams(name, ps);
-    const ctrl = CONTROLLED[name];
-    let badgeY = yLo - BOX / 2;
+function currentOffset(node) {
+  const t = getComputedStyle(node).transform;
+  if (!t || t === 'none') return [0, 0];
+  const m = new DOMMatrixReadOnly(t);
+  return [m.e, m.f];
+}
 
-    if (rows.length === 1) {
-      badgeY = drawBox(g, cx, yLo, yLo, gateLabel(name), params);
-    } else if (name === 'swap') {
-      el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
-      for (const y of ys) {
-        el('path', { d: `M${cx - 7} ${y - 7}L${cx + 7} ${y + 7}M${cx - 7} ${y + 7}L${cx + 7} ${y - 7}`, class: 'gate-stroke' }, g);
-      }
-      badgeY = yLo - 10;
-    } else if (ctrl && rows.length === ctrl.controls + 1) {
-      const targetY = ys[ys.length - 1];
-      el('line', { x1: cx, x2: cx, y1: yLo, y2: yHi, class: 'gate-line' }, g);
-      for (const y of ys.slice(0, -1)) el('circle', { cx, cy: y, r: 5.5, class: 'gate-dot' }, g);
-      if (ctrl.target === 'x') {
-        el('circle', { cx, cy: targetY, r: 12, class: 'gate-target' }, g);
-        el('path', { d: `M${cx - 12} ${targetY}H${cx + 12}M${cx} ${targetY - 12}V${targetY + 12}`, class: 'gate-stroke' }, g);
-      } else if (ctrl.target === 'dot') {
-        el('circle', { cx, cy: targetY, r: 5.5, class: 'gate-dot' }, g);
-        if (params) {
-          const t = el('text', { x: cx + 9, y: (yLo + yHi) / 2 + 4, class: 'gate-param' }, g);
-          t.textContent = params;
-        }
-      } else {
-        drawBox(g, cx, targetY, targetY, ctrl.target, params);
-      }
-      badgeY = yLo - 10;
-    } else {
-      // Generic multi-qubit gate (MS, RZZ, ECR, ...): a box spanning its wires,
-      // with ticks marking the wires it actually acts on.
-      badgeY = drawBox(g, cx, yLo, yHi, gateLabel(name), params);
-      for (const y of ys) el('line', { x1: cx - BOX / 2 - 4, x2: cx - BOX / 2, y1: y, y2: y, class: 'gate-stroke' }, g);
-    }
-    drawBadge(g, cx + BOX / 2 - 2, badgeY + 1, status);
+const easeOutQuart = (t) => 1 - (1 - t) ** 4;
+
+export class Stage {
+  constructor(svg) {
+    this.svg = svg;
+    this.wireLayer = svg.querySelector('.wires');
+    this.gateLayer = svg.querySelector('.gates');
+    this.entries = []; // [{ id, gate, node, x, y }]
+    this.wires = new Map(); // key -> { node, y }
+    this.step = null;
+    this.nextId = 1;
+    this.view = null;
+    this.cameraFrame = null;
+    this.layoutInfo = null;
   }
-  return { wires: wires.length, columns };
+
+  // Available drawing box in CSS pixels: the player minus the overlaid top
+  // bar, the controls and a fixed allowance for a two-line caption (fixed so
+  // the camera doesn't jump with each caption's length).
+  measure() {
+    const player = this.svg.parentElement;
+    const r = player.getBoundingClientRect();
+    const narrow = r.width < 640;
+    const bar = player.querySelector('.topbar > :last-child').getBoundingClientRect();
+    const scrub = player.querySelector('.scrub').getBoundingClientRect();
+    const insetTop = bar.bottom - r.top + 14;
+    const insetBottom = r.bottom - scrub.top + (narrow ? 132 : 112);
+    return {
+      w: Math.max(r.width - (narrow ? 16 : 48), 200),
+      h: Math.max(r.height - insetTop - insetBottom, 140),
+      W: r.width, H: r.height, insetTop, insetBottom,
+    };
+  }
+
+  render(step, { isPhysical, direction = null, animate = true }) {
+    const motion = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const fade = animate; // reduced motion still crossfades
+    const labelFor = (q) => (isPhysical ? `Q${q}` : `q${q}`);
+    const wires = visibleWires(step);
+    const rowOf = new Map(wires.map((q, i) => [q, i]));
+    const { placed, columns } = placeGates(step.gates, rowOf);
+    const box = this.measure();
+    const fold = chooseFold(columns, wires.length, box);
+    this.layoutInfo = { wires: wires.length, columns, bands: fold.bands };
+    const bandTop = (b) => b * (fold.bandH + BAND_GAP);
+    const pos = (col, row) => {
+      const band = Math.floor(col / fold.perBand);
+      return {
+        band,
+        x: LEFT + (col % fold.perBand) * COL_W + COL_W / 2,
+        y: bandTop(band) + TOP + row * ROW_H,
+      };
+    };
+
+    // ----- wires (one set per band) -----
+    const start = new Map();
+    const end = new Map();
+    if (step.layout) {
+      step.layout.initial.forEach((phys, v) => start.set(phys, v));
+      step.layout.final.forEach((phys, v) => end.set(phys, v));
+    } else {
+      wires.forEach((q) => { start.set(q, q); end.set(q, q); });
+    }
+    const keepWires = new Set();
+    for (let b = 0; b < fold.bands; b++) {
+      wires.forEach((q, r) => {
+        const key = `${isPhysical ? 'P' : 'L'}${q}@${b}`;
+        keepWires.add(key);
+        const y = bandTop(b) + TOP + r * ROW_H;
+        const old = this.wires.get(key);
+        const node = old ? old.node : el('g', { class: 'wire-row' }, this.wireLayer);
+        const oldY = old ? old.y + currentOffset(node)[1] : null;
+        node.getAnimations().forEach((a) => a.cancel());
+        node.replaceChildren();
+        el('line', { x1: LEFT - 10, x2: fold.w - RIGHT + 10, y1: y, y2: y, class: 'wire' }, node);
+        el('text', { x: 6, y: y + 4, class: 'wire-name' }, node).textContent = labelFor(q);
+        if (b === 0 && isPhysical && start.has(q)) {
+          el('text', { x: LEFT - 16, y: y + 4, 'text-anchor': 'end', class: 'wire-logical' }, node).textContent = `q${start.get(q)}`;
+        }
+        if (b === fold.bands - 1 && end.has(q)) {
+          el('text', { x: fold.w - RIGHT + 16, y: y + 4, class: 'wire-logical' }, node).textContent = `q${end.get(q)}`;
+        }
+        if (old && motion && oldY !== y) {
+          node.animate([{ transform: `translate(0px, ${oldY - y}px)` }, { transform: 'translate(0px, 0px)' }], { duration: MOVE_MS, easing: EASE_OUT });
+        } else if (!old && fade) {
+          node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ENTER_MS, easing: EASE_OUT });
+        }
+        this.wires.set(key, { node, y });
+      });
+    }
+    for (const [key, w] of this.wires) {
+      if (keepWires.has(key)) continue;
+      this.wires.delete(key);
+      if (fade) {
+        w.node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: EXIT_MS, fill: 'forwards' }).finished
+          .then(() => w.node.remove(), () => w.node.remove());
+      } else {
+        w.node.remove();
+      }
+    }
+
+    // ----- gates -----
+    const { ids, gone } = matchGates(this.entries, this.step, step, direction);
+    const byId = new Map(this.entries.map((e) => [e.id, e]));
+    const nextEntries = [];
+    placed.forEach((p, i) => {
+      const gate = step.gates[i];
+      const anchor = pos(p.col, p.lo);
+      const ys = p.rows.map((r) => pos(p.col, r).y);
+      const yLo = anchor.y;
+      const yHi = pos(p.col, p.hi).y;
+      const prev = ids[i] !== null ? byId.get(ids[i]) : null;
+      const node = prev ? prev.node : el('g', {}, this.gateLayer);
+      let fromX = 0;
+      let fromY = 0;
+      if (prev) {
+        const [ox, oy] = currentOffset(node);
+        fromX = prev.x + ox - anchor.x;
+        fromY = prev.y + oy - anchor.y;
+      }
+      node.getAnimations().forEach((a) => a.cancel());
+      node.replaceChildren();
+      drawGate(node, gate, anchor.x, ys, yLo, yHi, labelFor);
+      if (prev && motion && (fromX || fromY)) {
+        node.animate([{ transform: `translate(${fromX}px, ${fromY}px)` }, { transform: 'translate(0px, 0px)' }], { duration: MOVE_MS, easing: EASE_OUT });
+      } else if (!prev && fade) {
+        const delay = Math.min(p.col * 10, 220) + (motion ? 120 : 0);
+        const frames = motion
+          ? [{ opacity: 0, transform: 'scale(0.35)' }, { opacity: 1, transform: 'scale(1)' }]
+          : [{ opacity: 0 }, { opacity: 1 }];
+        node.animate(frames, { duration: motion ? ENTER_MS : 220, delay, easing: EASE_OUT, fill: 'backwards' });
+      }
+      nextEntries.push({ id: prev ? prev.id : this.nextId++, gate, node, x: anchor.x, y: anchor.y });
+    });
+    for (const e of gone) {
+      const frames = motion
+        ? [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.5)' }]
+        : [{ opacity: 1 }, { opacity: 0 }];
+      e.node.classList.add('is-leaving');
+      if (fade) {
+        e.node.getAnimations().forEach((a) => a.cancel());
+        e.node.animate(frames, { duration: EXIT_MS, easing: 'ease-in', fill: 'forwards' }).finished
+          .then(() => e.node.remove(), () => e.node.remove());
+      } else {
+        e.node.remove();
+      }
+    }
+    // Keep paint order stable: leaving gates under, current gates in order.
+    for (const e of nextEntries) this.gateLayer.appendChild(e.node);
+    this.entries = nextEntries;
+    this.step = step;
+
+    // ----- camera -----
+    const scale = Math.min(fold.scale, MAX_SCALE);
+    const vw = box.W / scale;
+    const vh = box.H / scale;
+    const cy = fold.h / 2 - ((box.insetTop - box.insetBottom) / 2) / scale;
+    const target = [fold.w / 2 - vw / 2, cy - vh / 2, vw, vh];
+    this.moveCamera(target, motion);
+    return this.layoutInfo;
+  }
+
+  moveCamera(target, motion) {
+    if (this.cameraFrame) cancelAnimationFrame(this.cameraFrame);
+    const from = this.view;
+    const apply = (v) => {
+      this.view = v;
+      this.svg.setAttribute('viewBox', v.map((n) => n.toFixed(2)).join(' '));
+    };
+    if (!from || !motion) {
+      apply(target);
+      return;
+    }
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = Math.min((now - t0) / MOVE_MS, 1);
+      const k = easeOutQuart(t);
+      apply(from.map((a, i) => a + (target[i] - a) * k));
+      if (t < 1) this.cameraFrame = requestAnimationFrame(tick);
+    };
+    this.cameraFrame = requestAnimationFrame(tick);
+  }
 }
 
 export function gateListTable(step, isPhysical) {
