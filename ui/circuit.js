@@ -15,12 +15,12 @@ import { formatParams, gateLabel, STATUS_WORDS } from './format.js';
 import { gateInfo, wikiTitle, wikiUrl } from './wiki.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const ROW_H = 46;
-const COL_W = 50;
+const ROW_H = 50;
+const COL_W = 54;
 const LEFT = 92;
 const RIGHT = 56;
-const TOP = 30;
-const BAND_GAP = 30;
+const TOP = 32;
+const BAND_GAP = 46;
 const BOX = 36;
 const MAX_SCALE = 2.4;
 // Zoom limits relative to the fitted view, and how much of the circuit must
@@ -263,10 +263,10 @@ export class Stage {
     const narrow = r.width < 640;
     const bar = player.querySelector('.topbar > :last-child').getBoundingClientRect();
     const scrub = player.querySelector('.scrub').getBoundingClientRect();
-    const insetTop = bar.bottom - r.top + 14;
-    const insetBottom = r.bottom - scrub.top + (narrow ? 132 : 112);
+    const insetTop = bar.bottom - r.top + 20;
+    const insetBottom = r.bottom - scrub.top + (narrow ? 148 : 132);
     return {
-      w: Math.max(r.width - (narrow ? 16 : 48), 200),
+      w: Math.max(r.width - (narrow ? 32 : 96), 200),
       h: Math.max(r.height - insetTop - insetBottom, 140),
       W: r.width, H: r.height, insetTop, insetBottom,
     };
