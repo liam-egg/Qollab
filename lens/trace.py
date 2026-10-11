@@ -325,14 +325,10 @@ def trace_circuit(
 
 
 def _versions() -> dict:
-    versions = {"qiskit": qiskit.__version__}
-    try:
-        import qiskit_ionq
+    from .ionq_native import SOURCE_VERSION
 
-        versions["qiskit_ionq"] = qiskit_ionq.__version__
-    except Exception:
-        versions["qiskit_ionq"] = None
-    return versions
+    # The IonQ gates and passes are bundled from this qiskit-ionq release.
+    return {"qiskit": qiskit.__version__, "qiskit_ionq": SOURCE_VERSION}
 
 
 def trace_bundle(

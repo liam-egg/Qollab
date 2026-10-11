@@ -617,7 +617,7 @@ function showBundle(bundle) {
   if (!bundle.traces[state.targetId]) state.targetId = bundle.order[0];
   $('preset-blurb').textContent = bundle.circuit.blurb;
   const v = bundle.versions;
-  $('versions').textContent = `Seed ${bundle.seed}, optimization level ${bundle.optimization_level}, Qiskit ${v.qiskit}${v.qiskit_ionq ? `, qiskit-ionq ${v.qiskit_ionq}` : ''}`;
+  $('versions').textContent = `Seed ${bundle.seed}, optimization level ${bundle.optimization_level}, Qiskit ${v.qiskit}${v.qiskit_ionq ? `, IonQ gates and passes from qiskit-ionq ${v.qiskit_ionq}` : ''}`;
   player.classList.add('is-poster');
   selectTarget(state.targetId);
 }

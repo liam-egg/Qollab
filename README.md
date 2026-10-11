@@ -44,7 +44,7 @@ The app needs a browser Qollab supports (recent Chrome, Edge or Opera, or Firefo
 Locally:
 
 ```bash
-pip install "qiskit>=2.5.2,<3" qiskit-ionq==1.1.1 pytest
+pip install "qiskit>=2.5.2,<3" pytest
 python scripts/build_traces.py   # regenerate data/traces/*.json
 python -m pytest tests           # 64 checks, about a minute
 python dev/serve.py              # preview at http://localhost:8765
@@ -56,6 +56,7 @@ python dev/serve.py              # preview at http://localhost:8765
 lens/trace.py      runs a preset pass manager with a callback after every pass
 lens/targets.py    the three targets (coupling maps, basis gates, IonQ Target)
 lens/presets.py    preset circuits, written gate by gate
+lens/ionq_native/  IonQ gates and passes, bundled unmodified from qiskit-ionq 1.1.1
 lens/service.py    the functions main.js calls (JSON strings in and out)
 data/traces/       precomputed traces, so the demo never waits on a backend
 main.js, ui/       the page: SVG circuit renderer, timeline, panels
@@ -105,7 +106,7 @@ dev/               local preview that stands in for Qollab's JS-to-Python bridge
 | Library | Use | Licence |
 |---|---|---|
 | [Qiskit](https://github.com/Qiskit/qiskit) 2.5.2 | transpiler, circuits, tests | Apache-2.0 |
-| [qiskit-ionq](https://github.com/qiskit-community/qiskit-ionq) 1.1.1 | IonQ native gates, equivalences and rewrite passes | Apache-2.0 |
+| [qiskit-ionq](https://github.com/qiskit-community/qiskit-ionq) 1.1.1 | IonQ native gates, equivalences and rewrite passes. Qollab's runtime can't install the package, so the three modules used (`ionq_gates.py`, `ionq_equivalence_library.py`, `rewrite_rules.py`) are bundled **unmodified** in `lens/ionq_native/` with their licence (`LICENSE.txt`). | Apache-2.0 |
 | [Pyodide](https://pyodide.org) (provided by Qollab) | runs Python in the browser | MPL-2.0 |
 | [axe-core](https://github.com/dequelabs/axe-core) 4.10 | accessibility testing during development only; not shipped | MPL-2.0 |
 | pytest | tests only | MIT |
@@ -115,6 +116,6 @@ The frontend uses no third-party JavaScript. The only external stylesheet is the
 
 ## What existed before the build window
 
-Nothing. Every file was written during the hackathon build window (Oct 9–11, 2026; the first commit is Oct 10, 18:29 PT). No template, fork, tutorial project or earlier personal code was used. The only outside pieces are the libraries and fonts in the table above.
+Nothing. Every file was written during the hackathon build window (Oct 9–11, 2026; the first commit is Oct 10, 18:29 PT). No template, fork, tutorial project or earlier personal code was used. The only outside pieces are the libraries and fonts in the table above, including three unmodified qiskit-ionq modules bundled in `lens/ionq_native/`.
 
 The project was built with AI assistance: Claude Code (Anthropic) wrote code under the author's direction.

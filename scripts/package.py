@@ -12,8 +12,9 @@ import pathlib
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FILES = ["index.html", "main.js", "main.css", "requirements.txt", "README.md", "LICENSE"]
-FOLDERS = {"ui": "*.js", "lens": "*.py", "data/traces": "*.json"}
+FILES = ["index.html", "main.js", "main.css", "requirements.txt", "README.md", "LICENSE",
+         "lens/ionq_native/LICENSE.txt"]
+FOLDERS = {"ui": "*.js", "lens": "*.py", "lens/ionq_native": "*.py", "data/traces": "*.json"}
 MAX_BYTES = 2 * 1024 * 1024  # Qollab's per-file limit
 
 

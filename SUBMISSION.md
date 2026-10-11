@@ -99,11 +99,9 @@ cx q[0],q[4];
 
 ## Pre-flight check on Qollab (after uploading)
 
-- [ ] Run starts with no install errors in the console. Watch especially for `qiskit-ionq` failing to install on Pyodide; the fix is below.
+- [ ] Run starts with no install errors in the console.
 - [ ] Player loads the QFT, play works, all three chips switch.
 - [ ] Each preset in the dropdown loads.
 - [ ] "Try your own circuit" with the QASM above returns a result. This is the only part that runs Qiskit live, so it can take a few seconds.
 - [ ] Hover cards appear; Wikipedia links open (if the sandbox blocks new tabs, note it in the project card).
 - [ ] Works when the run is started on an **IonQ simulator** backend as well as the built-in one.
-
-**If the run fails while installing `qiskit-ionq`:** delete the `qiskit-ionq==1.1.1` line from `requirements.txt` in the Qollab editor and publish again. Presets keep working, because they're precomputed with qiskit-ionq locally. Live custom circuits then skip only the IonQ target and show a note.

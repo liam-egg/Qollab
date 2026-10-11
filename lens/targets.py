@@ -7,7 +7,8 @@ Three targets, chosen so each comparison changes one thing at a time:
 - ``full_ibm``: all-to-all connectivity with the *same* IBM basis. Comparing it
   with ``heavy_hex`` isolates the cost of connectivity.
 - ``ionq``: all-to-all connectivity with IonQ's native gates GPI, GPI2 and MS
-  (gate definitions and equivalences from ``qiskit-ionq``). Comparing it with
+  (gate definitions and equivalences from qiskit-ionq, bundled in
+  ``lens/ionq_native``). Comparing it with
   ``full_ibm`` isolates the cost of the native gate set.
 """
 
@@ -53,7 +54,7 @@ _ionq_ready = False
 def _ionq_target(num_qubits: int) -> Target:
     """An all-to-all Target whose only gates are IonQ's GPI, GPI2 and MS."""
     global _ionq_ready
-    from qiskit_ionq import GPI2Gate, GPIGate, MSGate, add_equivalences
+    from .ionq_native import GPI2Gate, GPIGate, MSGate, add_equivalences
 
     if not _ionq_ready:
         # Registers U -> GPI2·GPI·GPI2 and CX -> MS + GPI2 in the session
@@ -126,7 +127,7 @@ def pass_manager(target_id: str, num_qubits: int, optimization_level: int, seed:
         # them would never merge. qiskit-ionq's rewrite rules do that; they run
         # here as a post-optimization stage so each shows up in the trace.
         from qiskit.transpiler import PassManager
-        from qiskit_ionq.rewrite_rules import (
+        from .ionq_native import (
             CancelGPI2Adjoint,
             CancelGPIAdjoint,
             CommuteGPIsThroughMS,
